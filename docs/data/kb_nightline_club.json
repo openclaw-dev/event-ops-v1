@@ -1,0 +1,701 @@
+{
+  "event_metadata": {
+    "synthetic_event_name": "Nightline Club",
+    "source_sheet": "1001",
+    "event_type": "Single-night club event",
+    "age_policy": "21+",
+    "capacity": "GA 1200, VIB 200, Backstage 80",
+    "doors_open": "10:00 PM",
+    "doors_close": "4:00 AM",
+    "last_entry": "1:30 AM",
+    "city": "Coastal City",
+    "ticket_tiers": [
+      "General Admission",
+      "VIB",
+      "Backstage"
+    ],
+    "currency": "AED"
+  },
+  "entries": [
+    {
+      "section_id": "event.dates",
+      "category": "Event & Venue Info",
+      "intent": "event_timing",
+      "escalation_needed": false,
+      "question_en": "When does Nightline Club take place?",
+      "answer_en_neutral": "Nightline Club is a single-night event. The exact date is published on the official event page.",
+      "question_ar": "متى تقام فعالية Nightline Club؟",
+      "answer_ar_neutral": "Nightline Club فعالية لليلة واحدة. يُنشر التاريخ الدقيق على الصفحة الرسمية للفعالية."
+    },
+    {
+      "section_id": "venue.location",
+      "category": "Getting Here",
+      "intent": "venue_location",
+      "escalation_needed": false,
+      "question_en": "Where is Nightline Club located?",
+      "answer_en_neutral": "The event is held at a designated venue in the host city. The exact location and map link are available on the official event page.",
+      "question_ar": "أين تقع فعالية Nightline Club؟",
+      "answer_ar_neutral": "تقام الفعالية في موقع مخصص في المدينة المضيفة. يمكن الاطلاع على الموقع الدقيق ورابط الخريطة على الصفحة الرسمية للفعالية."
+    },
+    {
+      "section_id": "policy.age",
+      "category": "Admission Policies",
+      "intent": "age_eligibility",
+      "escalation_needed": false,
+      "question_en": "What is the minimum age to attend Nightline Club?",
+      "answer_en_neutral": "The minimum age for entry is 21 years. Valid identification is required at the gate, and entry will be denied without it.",
+      "question_ar": "ما هو الحد الأدنى للسن المسموح به لحضور فعالية Nightline Club؟",
+      "answer_ar_neutral": "الحد الأدنى للسن المسموح به لدخول الفعالية هو 21 عامًا. يُطلب تقديم هوية سارية المفعول عند البوابة، ولن يُسمح بالدخول بدونها."
+    },
+    {
+      "section_id": "ticket.how_to_buy",
+      "category": "Ticketing",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "How can I purchase a ticket for Nightline Club?",
+      "answer_en_neutral": "Tickets are sold exclusively through the official ticketing platform. Please use the link provided on the event page to complete your purchase.",
+      "question_ar": "كيف يمكنني شراء تذكرة لفعالية Nightline Club؟",
+      "answer_ar_neutral": "تُباع التذاكر حصريًا من خلال منصة التذاكر الرسمية. يُرجى استخدام الرابط المتوفر على صفحة الفعالية لإتمام عملية الشراء."
+    },
+    {
+      "section_id": "event.lineup",
+      "category": "Lineup",
+      "intent": "lineup_question",
+      "escalation_needed": false,
+      "question_en": "Who is performing at Nightline Club?",
+      "answer_en_neutral": "The lineup is published on the official event page and is updated as artists are confirmed.",
+      "question_ar": "من هم الفنانون المشاركون في Nightline Club؟",
+      "answer_ar_neutral": "تُنشر قائمة الفنانين على الصفحة الرسمية للفعالية، ويتم تحديثها مع تأكيد كل فنان."
+    },
+    {
+      "section_id": "event.stages",
+      "category": "Event & Venue Info",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "How many stages or areas will there be at the event?",
+      "answer_en_neutral": "The number of stages or performance areas is listed on the official event page along with the schedule.",
+      "question_ar": "كم عدد المسارح أو المناطق الموسيقية في الفعالية؟",
+      "answer_ar_neutral": "يُذكر عدد المسارح أو المناطق الموسيقية على الصفحة الرسمية للفعالية مع الجدول الزمني."
+    },
+    {
+      "section_id": "event.gate_times",
+      "category": "Event & Venue Info",
+      "intent": "event_timing",
+      "escalation_needed": false,
+      "question_en": "When do the doors open and close?",
+      "answer_en_neutral": "Doors open at 10:00 PM and the event runs until 4:00 AM.",
+      "question_ar": "ما هي مواعيد فتح وإغلاق الأبواب؟",
+      "answer_ar_neutral": "تفتح الأبواب الساعة 10:00 مساءً وتستمر الفعالية حتى الساعة 4:00 صباحًا."
+    },
+    {
+      "section_id": "event.last_entry",
+      "category": "Admission Policies",
+      "intent": "last_entry_time",
+      "escalation_needed": false,
+      "question_en": "What is the last entry time?",
+      "answer_en_neutral": "The last entry time is 1:30 AM. Guests arriving after this time will not be admitted.",
+      "question_ar": "ما هو آخر موعد للدخول؟",
+      "answer_ar_neutral": "آخر موعد للدخول هو الساعة 1:30 صباحًا. لن يُسمح بدخول الضيوف بعد هذا الموعد."
+    },
+    {
+      "section_id": "policy.id_required",
+      "category": "Admission Policies",
+      "intent": "entry_policy",
+      "escalation_needed": false,
+      "question_en": "Do I need to bring my ID to enter?",
+      "answer_en_neutral": "Yes. A valid physical or digital government-issued ID is required for entry. Entry will be denied without valid identification.",
+      "question_ar": "هل أحتاج إلى إحضار هويتي للدخول؟",
+      "answer_ar_neutral": "نعم. يُطلب تقديم هوية حكومية سارية المفعول، سواء كانت مادية أو رقمية، للدخول. لن يُسمح بالدخول دون هوية سارية."
+    },
+    {
+      "section_id": "policy.dress_code",
+      "category": "Admission Policies",
+      "intent": "dress_code",
+      "escalation_needed": false,
+      "question_en": "What is the dress code for Nightline Club?",
+      "answer_en_neutral": "Smart attire is required. Athletic wear, beach attire, and overly casual clothing are not permitted. Security reserves the right to deny entry to guests in attire deemed inappropriate.",
+      "question_ar": "ما هو الزي المطلوب لحضور Nightline Club؟",
+      "answer_ar_neutral": "يُطلب ارتداء الملابس الأنيقة. الملابس الرياضية وملابس الشاطئ والملابس الكاجوال غير مسموح بها. يحتفظ فريق الأمن بحق رفض دخول أي ضيف يرتدي ملابس غير مناسبة."
+    },
+    {
+      "section_id": "service.accessibility",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": true,
+      "question_en": "Is Nightline Club accessible for guests with disabilities?",
+      "answer_en_neutral": "The venue provides accessibility accommodations where possible. For specific requirements, please contact the support team in advance.",
+      "question_ar": "هل فعالية Nightline Club مهيأة لذوي الإعاقة؟",
+      "answer_ar_neutral": "يوفر الموقع تسهيلات للضيوف من ذوي الإعاقة عند الإمكان. للاحتياجات الخاصة، يُرجى التواصل مع فريق الدعم مسبقًا."
+    },
+    {
+      "section_id": "service.first_aid",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "Are first aid services available?",
+      "answer_en_neutral": "Yes. Trained first aid personnel are on site throughout the event.",
+      "question_ar": "هل تتوفر خدمات الإسعافات الأولية؟",
+      "answer_ar_neutral": "نعم. يتوفر موظفون مدربون لتقديم الإسعافات الأولية في الموقع طوال فترة الفعالية."
+    },
+    {
+      "section_id": "service.prayer",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "Are there prayer areas at the venue?",
+      "answer_en_neutral": "A designated prayer area is available near the venue entrance.",
+      "question_ar": "هل تتوفر أماكن للصلاة في الموقع؟",
+      "answer_ar_neutral": "تتوفر منطقة مخصصة للصلاة بالقرب من مدخل الموقع."
+    },
+    {
+      "section_id": "policy.smoking",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "Is smoking allowed at the venue?",
+      "answer_en_neutral": "Smoking is permitted in designated outdoor areas only.",
+      "question_ar": "هل يُسمح بالتدخين في الموقع؟",
+      "answer_ar_neutral": "يُسمح بالتدخين في الأماكن الخارجية المخصصة فقط."
+    },
+    {
+      "section_id": "service.wifi",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "Is free Wi-Fi available?",
+      "answer_en_neutral": "Free Wi-Fi is not provided. Mobile data coverage is available on site.",
+      "question_ar": "هل تتوفر شبكة واي فاي مجانية؟",
+      "answer_ar_neutral": "لا تتوفر شبكة واي فاي مجانية. تغطية بيانات الهاتف المحمول متوفرة في الموقع."
+    },
+    {
+      "section_id": "service.charging",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "Are phone charging stations available?",
+      "answer_en_neutral": "Phone charging stations are not provided. Guests are encouraged to bring a portable power bank.",
+      "question_ar": "هل تتوفر محطات لشحن الهواتف؟",
+      "answer_ar_neutral": "لا تتوفر محطات شحن للهواتف. يُنصح الضيوف بإحضار بطارية محمولة."
+    },
+    {
+      "section_id": "service.merch",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "Will merchandise be available?",
+      "answer_en_neutral": "Official merchandise may be available at the venue. Availability is announced through the official channels.",
+      "question_ar": "هل ستتوفر منتجات للبيع؟",
+      "answer_ar_neutral": "قد تتوفر منتجات رسمية في الموقع. يتم الإعلان عن التوفر عبر القنوات الرسمية."
+    },
+    {
+      "section_id": "service.food",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "What food and drinks are available?",
+      "answer_en_neutral": "A selection of food and beverages is available at the venue. Outside food and drinks are not permitted.",
+      "question_ar": "ما هي الأطعمة والمشروبات المتوفرة؟",
+      "answer_ar_neutral": "تتوفر مجموعة مختارة من الطعام والمشروبات في الموقع. لا يُسمح بإدخال الأطعمة والمشروبات من خارج الموقع."
+    },
+    {
+      "section_id": "service.shisha",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "Will shisha be available?",
+      "answer_en_neutral": "Shisha is not available at this event.",
+      "question_ar": "هل ستتوفر الشيشة؟",
+      "answer_ar_neutral": "لا تتوفر الشيشة في هذه الفعالية."
+    },
+    {
+      "section_id": "service.info_booth",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "Is there an information booth at the venue?",
+      "answer_en_neutral": "Yes. An information desk is located near the main entrance.",
+      "question_ar": "هل يوجد كشك معلومات في الموقع؟",
+      "answer_ar_neutral": "نعم. يوجد مكتب معلومات بالقرب من المدخل الرئيسي."
+    },
+    {
+      "section_id": "service.atm",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "Are ATMs available on site?",
+      "answer_en_neutral": "ATMs are not available on site. The event is cashless.",
+      "question_ar": "هل تتوفر أجهزة صراف آلي في الموقع؟",
+      "answer_ar_neutral": "لا تتوفر أجهزة صراف آلي في الموقع. الفعالية لا تتعامل بالنقد."
+    },
+    {
+      "section_id": "payment.methods_onsite",
+      "category": "Event & Venue Info",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "What payment methods are accepted at the venue?",
+      "answer_en_neutral": "This is a cashless event. Accepted methods include major credit and debit cards and supported mobile wallets.",
+      "question_ar": "ما هي طرق الدفع المقبولة في الموقع؟",
+      "answer_ar_neutral": "هذه فعالية لا تتعامل بالنقد. تشمل الطرق المقبولة بطاقات الائتمان والخصم الرئيسية والمحافظ الإلكترونية المدعومة."
+    },
+    {
+      "section_id": "service.washrooms",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "Are washrooms available?",
+      "answer_en_neutral": "Yes. Washrooms are available throughout the venue.",
+      "question_ar": "هل تتوفر دورات مياه؟",
+      "answer_ar_neutral": "نعم. تتوفر دورات المياه في جميع أنحاء الموقع."
+    },
+    {
+      "section_id": "service.lost_found_onsite",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": true,
+      "question_en": "Does the venue have a lost and found service?",
+      "answer_en_neutral": "Yes. Lost items can be handed in at the information desk. For items not recovered during the event, please contact the support team afterward.",
+      "question_ar": "هل تتوفر خدمة المفقودات في الموقع؟",
+      "answer_ar_neutral": "نعم. يمكن تسليم الأغراض المفقودة إلى مكتب المعلومات. للأغراض التي لم يتم استلامها خلال الفعالية، يُرجى التواصل مع فريق الدعم بعد ذلك."
+    },
+    {
+      "section_id": "service.lost_found_post_event",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": true,
+      "question_en": "How can I contact lost and found after the event?",
+      "answer_en_neutral": "Please contact the support team through the official channels listed on the event page. Unclaimed items are held for a limited period.",
+      "question_ar": "كيف يمكنني التواصل مع خدمة المفقودات بعد انتهاء الفعالية؟",
+      "answer_ar_neutral": "يُرجى التواصل مع فريق الدعم عبر القنوات الرسمية المدرجة على صفحة الفعالية. يتم الاحتفاظ بالأغراض غير المُطالب بها لفترة محدودة."
+    },
+    {
+      "section_id": "service.found_item",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "What should I do if I find someone else's item?",
+      "answer_en_neutral": "Please hand the item in at the information desk inside the venue.",
+      "question_ar": "ماذا أفعل إذا وجدت غرضًا يخص شخصًا آخر؟",
+      "answer_ar_neutral": "يُرجى تسليم الغرض إلى مكتب المعلومات داخل الموقع."
+    },
+    {
+      "section_id": "policy.prohibited_items",
+      "category": "Admission Policies",
+      "intent": "entry_policy",
+      "escalation_needed": false,
+      "question_en": "Which items are prohibited at the venue?",
+      "answer_en_neutral": "Prohibited items include weapons, illegal substances, outside food and beverages, glass containers, large bags, professional cameras, and any item that may pose a safety or comfort risk. The full list is published on the official event page.",
+      "question_ar": "ما هي الأشياء الممنوع إحضارها إلى الموقع؟",
+      "answer_ar_neutral": "تشمل الممنوعات الأسلحة والمواد غير المشروعة والأطعمة والمشروبات من خارج الموقع والعبوات الزجاجية والحقائب الكبيرة وكاميرات التصوير الاحترافية وأي غرض قد يُشكّل خطرًا على السلامة أو الراحة. القائمة الكاملة منشورة على الصفحة الرسمية للفعالية."
+    },
+    {
+      "section_id": "policy.prohibited_consequence",
+      "category": "Admission Policies",
+      "intent": "entry_policy",
+      "escalation_needed": true,
+      "question_en": "What happens if I am found with a prohibited item?",
+      "answer_en_neutral": "Security will ask you to dispose of the item or return it to your vehicle. Repeated or serious violations may result in denial of entry without refund.",
+      "question_ar": "ماذا يحدث إذا وُجد بحوزتي غرض ممنوع؟",
+      "answer_ar_neutral": "سيُطلب منك التخلص من الغرض أو إعادته إلى سيارتك. قد تؤدي المخالفات المتكررة أو الجسيمة إلى رفض الدخول دون استرداد ثمن التذكرة."
+    },
+    {
+      "section_id": "policy.bag_check",
+      "category": "Admission Policies",
+      "intent": "entry_policy",
+      "escalation_needed": false,
+      "question_en": "Will my bag be checked at the entrance?",
+      "answer_en_neutral": "Yes. All bags are subject to security screening at the entrance.",
+      "question_ar": "هل سيتم تفتيش حقيبتي عند الدخول؟",
+      "answer_ar_neutral": "نعم. تخضع جميع الحقائب للتفتيش الأمني عند الدخول."
+    },
+    {
+      "section_id": "policy.luggage_airport",
+      "category": "Admission Policies",
+      "intent": "entry_policy",
+      "escalation_needed": true,
+      "question_en": "I am coming straight from the airport. Can I bring my luggage to the venue?",
+      "answer_en_neutral": "Large luggage is not permitted inside the venue. Please store your luggage before arrival. If this is not possible, contact the support team for guidance.",
+      "question_ar": "أنا قادم مباشرة من المطار. هل يمكنني إحضار حقائبي إلى الموقع؟",
+      "answer_ar_neutral": "لا يُسمح بإدخال الحقائب الكبيرة إلى الموقع. يُرجى تخزين حقائبك قبل الوصول. إذا تعذر ذلك، يُرجى التواصل مع فريق الدعم للحصول على إرشادات."
+    },
+    {
+      "section_id": "safety.unsafe_situation",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": true,
+      "question_en": "I am in an uncomfortable or unsafe situation on site. What should I do?",
+      "answer_en_neutral": "Please approach any staff member wearing event identification, go to the information desk, or call the on-site safety number listed on your ticket or the event page. Your safety is the top priority.",
+      "question_ar": "أنا في موقف غير مريح أو غير آمن داخل الموقع. ماذا أفعل؟",
+      "answer_ar_neutral": "يُرجى التحدث إلى أي موظف يرتدي شارة الفعالية، أو التوجه إلى مكتب المعلومات، أو الاتصال برقم الأمان الميداني المدرج على تذكرتك أو على صفحة الفعالية. سلامتك هي الأولوية القصوى."
+    },
+    {
+      "section_id": "policy.photo_video",
+      "category": "Inside the event (Services)",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "What is the policy on photos and video recording?",
+      "answer_en_neutral": "Personal photography and recording for non-commercial use is permitted. Use of professional cameras and commercial recording equipment requires prior authorization.",
+      "question_ar": "ما هي سياسة التصوير والتسجيل؟",
+      "answer_ar_neutral": "يُسمح بالتصوير والتسجيل الشخصي لأغراض غير تجارية. يتطلب استخدام الكاميرات الاحترافية ومعدات التسجيل التجاري إذنًا مسبقًا."
+    },
+    {
+      "section_id": "getting_here.parking",
+      "category": "Getting Here",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "Is parking available at the venue?",
+      "answer_en_neutral": "Yes. Parking is available near the venue. Please refer to the venue map for parking locations.",
+      "question_ar": "هل تتوفر مواقف سيارات في الموقع؟",
+      "answer_ar_neutral": "نعم. تتوفر مواقف بالقرب من الموقع. يُرجى الرجوع إلى خريطة الموقع لمعرفة أماكن المواقف."
+    },
+    {
+      "section_id": "getting_here.walking",
+      "category": "Getting Here",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "Is the parking within walking distance of the entrance?",
+      "answer_en_neutral": "Yes. Parking areas are within walking distance of the main entrance.",
+      "question_ar": "هل المواقف على مسافة قريبة من المدخل؟",
+      "answer_ar_neutral": "نعم. تقع المواقف على مسافة سير من المدخل الرئيسي."
+    },
+    {
+      "section_id": "ticket.tiers_overview",
+      "category": "Ticketing",
+      "intent": "ticket_availability_sold_out",
+      "escalation_needed": false,
+      "question_en": "What ticket tiers are available for Nightline Club?",
+      "answer_en_neutral": "Three ticket tiers are available: General Admission, VIB, and Backstage. Each tier offers a different level of access and amenities. Full details are listed on the official event page.",
+      "question_ar": "ما هي فئات التذاكر المتوفرة لفعالية Nightline Club؟",
+      "answer_ar_neutral": "تتوفر ثلاث فئات من التذاكر: الدخول العام (General Admission)، والـVIB، والباكستيج (Backstage). توفر كل فئة مستوى مختلفًا من الوصول والمزايا. التفاصيل الكاملة على الصفحة الرسمية للفعالية."
+    },
+    {
+      "section_id": "ticket.ga_inclusions",
+      "category": "Ticketing",
+      "intent": "ticket_availability_sold_out",
+      "escalation_needed": false,
+      "question_en": "What does a General Admission ticket include?",
+      "answer_en_neutral": "General Admission grants entry to all public areas of the venue, including the main dancefloor.",
+      "question_ar": "ماذا تتضمن تذكرة الدخول العام؟",
+      "answer_ar_neutral": "تمنح تذكرة الدخول العام حق الوصول إلى جميع المناطق العامة في الموقع، بما في ذلك الدانس فلور الرئيسي."
+    },
+    {
+      "section_id": "ticket.vib_inclusions",
+      "category": "Ticketing",
+      "intent": "backstage_or_vib_request",
+      "escalation_needed": true,
+      "question_en": "What does a VIB ticket include?",
+      "answer_en_neutral": "A VIB ticket includes all General Admission access plus entry to an elevated viewing area and dedicated bar service. Exact inclusions are listed on the event page.",
+      "question_ar": "ماذا تتضمن تذكرة الـVIB؟",
+      "answer_ar_neutral": "تتضمن تذكرة الـVIB جميع امتيازات الدخول العام، بالإضافة إلى الدخول إلى منطقة مشاهدة مرتفعة وخدمة بار مخصصة. التفاصيل الدقيقة على صفحة الفعالية."
+    },
+    {
+      "section_id": "ticket.backstage_inclusions",
+      "category": "Ticketing",
+      "intent": "backstage_or_vib_request",
+      "escalation_needed": true,
+      "question_en": "What does a Backstage ticket include?",
+      "answer_en_neutral": "A Backstage ticket includes all General Admission and VIB access plus entry to the backstage area. Exact inclusions are listed on the event page.",
+      "question_ar": "ماذا تتضمن تذكرة الباكستيج؟",
+      "answer_ar_neutral": "تتضمن تذكرة الباكستيج جميع امتيازات الدخول العام والـVIB، بالإضافة إلى الدخول إلى منطقة الباكستيج. التفاصيل الدقيقة على صفحة الفعالية."
+    },
+    {
+      "section_id": "ticket.backstage_capacity",
+      "category": "Ticketing",
+      "intent": "backstage_or_vib_request",
+      "escalation_needed": true,
+      "question_en": "Is there a capacity limit on Backstage access?",
+      "answer_en_neutral": "Yes. Backstage access is capacity-limited and typically sells out before other tiers.",
+      "question_ar": "هل هناك حد أقصى لعدد الحاضرين في منطقة الباكستيج؟",
+      "answer_ar_neutral": "نعم. منطقة الباكستيج محدودة السعة وعادةً ما تُباع تذاكرها قبل الفئات الأخرى."
+    },
+    {
+      "section_id": "ticket.multi_event",
+      "category": "Ticketing",
+      "intent": "ticket_availability_sold_out",
+      "escalation_needed": false,
+      "question_en": "Does one ticket grant access to multiple events?",
+      "answer_en_neutral": "No. Each ticket is valid for the specific event and date printed on it.",
+      "question_ar": "هل تمنح تذكرة واحدة الوصول إلى عدة فعاليات؟",
+      "answer_ar_neutral": "لا. كل تذكرة صالحة للفعالية والتاريخ المحددين عليها فقط."
+    },
+    {
+      "section_id": "ticket.wallet_credit",
+      "category": "Ticketing",
+      "intent": "other",
+      "escalation_needed": true,
+      "question_en": "How do I use wallet credit toward a purchase?",
+      "answer_en_neutral": "Wallet credit can be applied at checkout if available on your account. If the credit is not showing, please contact the support team.",
+      "question_ar": "كيف أستخدم رصيد المحفظة عند الشراء؟",
+      "answer_ar_neutral": "يمكن تطبيق رصيد المحفظة عند إتمام عملية الشراء إذا كان متاحًا في حسابك. إذا لم يظهر الرصيد، يُرجى التواصل مع فريق الدعم."
+    },
+    {
+      "section_id": "ticket.delivery_timing",
+      "category": "Ticketing",
+      "intent": "ticket_delivery_issue",
+      "escalation_needed": false,
+      "question_en": "When will I receive my ticket after purchase?",
+      "answer_en_neutral": "Tickets are delivered to your account on the official ticketing platform immediately after a successful purchase. A confirmation email is sent to the email used at checkout.",
+      "question_ar": "متى سأستلم تذكرتي بعد الشراء؟",
+      "answer_ar_neutral": "تُسلّم التذاكر إلى حسابك على منصة التذاكر الرسمية فور إتمام عملية الشراء بنجاح. يتم إرسال رسالة تأكيد إلى البريد الإلكتروني المستخدم عند الشراء."
+    },
+    {
+      "section_id": "ticket.buying_for_friends",
+      "category": "Ticketing",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "Can I buy tickets for friends?",
+      "answer_en_neutral": "Yes. You can purchase multiple tickets in a single order and transfer each one to the recipient through the official ticketing platform.",
+      "question_ar": "هل يمكنني شراء تذاكر لأصدقائي؟",
+      "answer_ar_neutral": "نعم. يمكنك شراء عدة تذاكر في طلب واحد وتحويل كل تذكرة إلى المستلم عبر منصة التذاكر الرسمية."
+    },
+    {
+      "section_id": "ticket.cancel_transfer",
+      "category": "Ticketing",
+      "intent": "other",
+      "escalation_needed": true,
+      "question_en": "How do I cancel a ticket transfer I sent to a friend?",
+      "answer_en_neutral": "If the recipient has not yet accepted the transfer, you may cancel it from your account. If it has been accepted, please contact the support team.",
+      "question_ar": "كيف يمكنني إلغاء تحويل تذكرة قمت بإرسالها إلى صديق؟",
+      "answer_ar_neutral": "إذا لم يقبل المستلم التحويل بعد، يمكنك إلغاؤه من حسابك. إذا تم قبوله، يُرجى التواصل مع فريق الدعم."
+    },
+    {
+      "section_id": "ticket.offline_access",
+      "category": "Ticketing",
+      "intent": "ticket_delivery_issue",
+      "escalation_needed": false,
+      "question_en": "I will not have data or Wi-Fi at the venue. How do I access my ticket?",
+      "answer_en_neutral": "Please download your ticket to your device before arriving. Once downloaded, the QR code can be displayed without an internet connection.",
+      "question_ar": "لن يكون لدي بيانات أو واي فاي في الموقع. كيف أصل إلى تذكرتي؟",
+      "answer_ar_neutral": "يُرجى تنزيل تذكرتك على جهازك قبل الوصول. بعد التنزيل، يمكن عرض رمز الاستجابة السريعة دون الحاجة إلى اتصال بالإنترنت."
+    },
+    {
+      "section_id": "ticket.reseller",
+      "category": "Ticketing",
+      "intent": "ticket_delivery_issue",
+      "escalation_needed": true,
+      "question_en": "I purchased my ticket through a reseller. How do I access it?",
+      "answer_en_neutral": "If you purchased through an authorized reseller, follow the instructions in their confirmation email. If you encounter issues, contact the support team with your reseller order details.",
+      "question_ar": "اشتريت تذكرتي عبر جهة إعادة بيع. كيف أصل إليها؟",
+      "answer_ar_neutral": "إذا اشتريت عبر جهة إعادة بيع معتمدة، اتبع التعليمات في رسالة التأكيد الخاصة بهم. إذا واجهت مشكلة، تواصل مع فريق الدعم مع تفاصيل طلبك."
+    },
+    {
+      "section_id": "payment.methods_online",
+      "category": "Ticketing",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "What payment methods are accepted online?",
+      "answer_en_neutral": "Major credit and debit cards and supported mobile wallets are accepted at checkout.",
+      "question_ar": "ما هي طرق الدفع المقبولة عبر الإنترنت؟",
+      "answer_ar_neutral": "تُقبل بطاقات الائتمان والخصم الرئيسية والمحافظ الإلكترونية المدعومة عند إتمام عملية الشراء."
+    },
+    {
+      "section_id": "ticket.group_discount",
+      "category": "Ticketing",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "Are group discounts available?",
+      "answer_en_neutral": "Group discounts are not offered for this event.",
+      "question_ar": "هل تتوفر خصومات للمجموعات؟",
+      "answer_ar_neutral": "لا تتوفر خصومات للمجموعات في هذه الفعالية."
+    },
+    {
+      "section_id": "ticket.max_quantity",
+      "category": "Ticketing",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "What is the maximum number of tickets I can purchase?",
+      "answer_en_neutral": "Each customer may purchase up to a defined limit per order, listed on the checkout page.",
+      "question_ar": "ما هو الحد الأقصى لعدد التذاكر التي يمكنني شراؤها؟",
+      "answer_ar_neutral": "يمكن لكل عميل شراء عدد محدود من التذاكر لكل طلب، كما هو مذكور في صفحة الدفع."
+    },
+    {
+      "section_id": "ticket.resale",
+      "category": "Ticketing",
+      "intent": "other",
+      "escalation_needed": true,
+      "question_en": "Is there an official channel to resell my ticket?",
+      "answer_en_neutral": "Official ticket resale is available within the ticketing platform where supported. Tickets sold outside the official platform are not guaranteed to be valid.",
+      "question_ar": "هل توجد قناة رسمية لإعادة بيع تذكرتي؟",
+      "answer_ar_neutral": "تتوفر إعادة البيع الرسمية داخل منصة التذاكر حيثما كانت مدعومة. التذاكر التي تُباع خارج المنصة الرسمية لا يُضمن صلاحيتها."
+    },
+    {
+      "section_id": "support.contact",
+      "category": "Ticketing",
+      "intent": "other",
+      "escalation_needed": true,
+      "question_en": "Who do I contact for ticket support?",
+      "answer_en_neutral": "Please contact the support team through the official channels listed on the event page, and include your order ID.",
+      "question_ar": "بمن يجب أن أتواصل للحصول على دعم بخصوص تذكرتي؟",
+      "answer_ar_neutral": "يُرجى التواصل مع فريق الدعم عبر القنوات الرسمية المدرجة على صفحة الفعالية، مع تضمين رقم الطلب."
+    },
+    {
+      "section_id": "ticket.change_details",
+      "category": "Ticketing",
+      "intent": "other",
+      "escalation_needed": true,
+      "question_en": "How can I change my details after purchase?",
+      "answer_en_neutral": "Some details may be editable from your account. For changes that are not available in the platform, please contact the support team.",
+      "question_ar": "كيف يمكنني تغيير بياناتي بعد إتمام عملية الشراء؟",
+      "answer_ar_neutral": "يمكن تعديل بعض التفاصيل من حسابك. للتغييرات غير المتاحة في المنصة، يُرجى التواصل مع فريق الدعم."
+    },
+    {
+      "section_id": "ticket.change_date",
+      "category": "Ticketing",
+      "intent": "other",
+      "escalation_needed": true,
+      "question_en": "Can I change my ticket to a different date?",
+      "answer_en_neutral": "Date changes are subject to the event's transfer policy. Please contact the support team to review your options.",
+      "question_ar": "هل يمكنني تغيير تذكرتي إلى تاريخ آخر؟",
+      "answer_ar_neutral": "يخضع تغيير التاريخ لسياسة التحويل الخاصة بالفعالية. يُرجى التواصل مع فريق الدعم لمراجعة الخيارات المتاحة."
+    },
+    {
+      "section_id": "ticket.upgrade",
+      "category": "Ticketing",
+      "intent": "ticket_upgrade_request",
+      "escalation_needed": true,
+      "question_en": "Can I upgrade my ticket?",
+      "answer_en_neutral": "Upgrades to a higher tier may be possible subject to availability. Please contact the support team to request an upgrade.",
+      "question_ar": "هل يمكنني ترقية تذكرتي؟",
+      "answer_ar_neutral": "قد تكون ترقية التذكرة إلى فئة أعلى ممكنة وفقًا للتوفر. يُرجى التواصل مع فريق الدعم لطلب الترقية."
+    },
+    {
+      "section_id": "ticket.upgrade_foc",
+      "category": "Ticketing",
+      "intent": "ticket_upgrade_request",
+      "escalation_needed": true,
+      "question_en": "Can I upgrade a complimentary ticket to a paid tier?",
+      "answer_en_neutral": "Complimentary tickets are generally not eligible for paid upgrades. Please contact the support team for case-by-case review.",
+      "question_ar": "هل يمكنني ترقية تذكرة مجانية إلى فئة مدفوعة؟",
+      "answer_ar_neutral": "التذاكر المجانية بشكل عام غير مؤهلة للترقية المدفوعة. يُرجى التواصل مع فريق الدعم للمراجعة في كل حالة على حدة."
+    },
+    {
+      "section_id": "ticket.cancel_request",
+      "category": "Ticketing",
+      "intent": "refund_request",
+      "escalation_needed": true,
+      "question_en": "Can I cancel my ticket?",
+      "answer_en_neutral": "Cancellation eligibility is determined by the event's refund policy, which is published on the event page. Please contact the support team to review your options.",
+      "question_ar": "هل يمكنني إلغاء تذكرتي؟",
+      "answer_ar_neutral": "تتحدد أهلية الإلغاء وفقًا لسياسة الاسترداد الخاصة بالفعالية المنشورة على صفحة الفعالية. يُرجى التواصل مع فريق الدعم لمراجعة الخيارات المتاحة."
+    },
+    {
+      "section_id": "ticket.no_confirmation",
+      "category": "Ticketing",
+      "intent": "payment_incomplete",
+      "escalation_needed": true,
+      "question_en": "I purchased a ticket but did not receive a confirmation email. What should I do?",
+      "answer_en_neutral": "Please check your spam folder. If you do not find the email, contact the support team with your order ID or the email address used at checkout.",
+      "question_ar": "اشتريت تذكرة لكنني لم أستلم رسالة التأكيد. ماذا أفعل؟",
+      "answer_ar_neutral": "يُرجى التحقق من مجلد البريد العشوائي. إذا لم تجد الرسالة، تواصل مع فريق الدعم مع تقديم رقم الطلب أو البريد الإلكتروني المستخدم عند الشراء."
+    },
+    {
+      "section_id": "ticket.not_received",
+      "category": "Ticketing",
+      "intent": "ticket_delivery_issue",
+      "escalation_needed": true,
+      "question_en": "I have not received my ticket. What should I do?",
+      "answer_en_neutral": "Tickets are delivered to your account on the official ticketing platform. Please log in and check your tickets section. If your ticket is not there, contact the support team.",
+      "question_ar": "لم أستلم تذكرتي. ماذا أفعل؟",
+      "answer_ar_neutral": "تُسلّم التذاكر إلى حسابك على منصة التذاكر الرسمية. يُرجى تسجيل الدخول والتحقق من قسم التذاكر. إذا لم تكن تذكرتك موجودة، تواصل مع فريق الدعم."
+    },
+    {
+      "section_id": "ticket.add_more",
+      "category": "Ticketing",
+      "intent": "other",
+      "escalation_needed": true,
+      "question_en": "Can I add more tickets to an order that has already been processed?",
+      "answer_en_neutral": "Once an order has been processed it cannot be modified. You may place a new order subject to availability.",
+      "question_ar": "هل يمكنني إضافة تذاكر إلى طلب تم تنفيذه بالفعل؟",
+      "answer_ar_neutral": "بعد تنفيذ الطلب، لا يمكن تعديله. يمكنك تقديم طلب جديد وفقًا للتوفر."
+    },
+    {
+      "section_id": "ticket.transfer",
+      "category": "Ticketing",
+      "intent": "other",
+      "escalation_needed": false,
+      "question_en": "Are tickets transferable to family or friends?",
+      "answer_en_neutral": "Yes. Tickets can be transferred to another person through the official ticketing platform up until the event start time.",
+      "question_ar": "هل التذاكر قابلة للتحويل إلى العائلة أو الأصدقاء؟",
+      "answer_ar_neutral": "نعم. يمكن تحويل التذاكر إلى شخص آخر عبر منصة التذاكر الرسمية حتى وقت بدء الفعالية."
+    },
+    {
+      "section_id": "ticket.delivery_method",
+      "category": "Ticketing",
+      "intent": "ticket_delivery_issue",
+      "escalation_needed": false,
+      "question_en": "Can I receive my ticket by email, SMS, or WhatsApp?",
+      "answer_en_neutral": "Tickets are delivered through your account on the official ticketing platform. Confirmation messages may be sent by email.",
+      "question_ar": "هل يمكنني استلام تذكرتي عبر البريد الإلكتروني أو الرسائل النصية أو الواتساب؟",
+      "answer_ar_neutral": "تُسلّم التذاكر عبر حسابك على منصة التذاكر الرسمية. قد تُرسل رسائل التأكيد عبر البريد الإلكتروني."
+    },
+    {
+      "section_id": "ticket.mail_physical",
+      "category": "Ticketing",
+      "intent": "ticket_delivery_issue",
+      "escalation_needed": false,
+      "question_en": "Can my ticket be mailed to me as a physical copy?",
+      "answer_en_neutral": "No. Tickets are digital only.",
+      "question_ar": "هل يمكن إرسال تذكرتي بالبريد كنسخة ورقية؟",
+      "answer_ar_neutral": "لا. التذاكر رقمية فقط."
+    },
+    {
+      "section_id": "ticket.upload_issue",
+      "category": "Ticketing",
+      "intent": "ticket_delivery_issue",
+      "escalation_needed": true,
+      "question_en": "My ticket is not loading in the app. What should I do?",
+      "answer_en_neutral": "Please ensure you are logged in with the email used at purchase and that the app is updated to the latest version. If the issue persists, contact the support team.",
+      "question_ar": "تذكرتي لا تظهر في التطبيق. ماذا أفعل؟",
+      "answer_ar_neutral": "يُرجى التأكد من تسجيل الدخول بالبريد الإلكتروني المستخدم عند الشراء وأن التطبيق محدّث إلى أحدث إصدار. إذا استمرت المشكلة، تواصل مع فريق الدعم."
+    },
+    {
+      "section_id": "policy.refund.standard",
+      "category": "Ticketing",
+      "intent": "refund_request",
+      "escalation_needed": true,
+      "question_en": "What is the refund policy for Nightline Club?",
+      "answer_en_neutral": "All ticket sales are final. Refunds are not issued except where required by applicable consumer protection law or in cases of event cancellation. Refund eligibility is reviewed on a case-by-case basis by the support team.",
+      "question_ar": "ما هي سياسة استرداد المبالغ لفعالية Nightline Club؟",
+      "answer_ar_neutral": "جميع مبيعات التذاكر نهائية. لا يتم استرداد المبالغ إلا في الحالات التي يقتضيها قانون حماية المستهلك المعمول به أو في حالات إلغاء الفعالية. يُراجع فريق الدعم أهلية الاسترداد لكل حالة على حدة."
+    },
+    {
+      "section_id": "policy.refund.medical",
+      "category": "Ticketing",
+      "intent": "refund_request",
+      "escalation_needed": true,
+      "question_en": "I cannot attend due to a medical reason. Can I get a refund?",
+      "answer_en_neutral": "Medical exceptions are reviewed on a case-by-case basis with valid supporting documentation. Please contact the support team in advance of the event.",
+      "question_ar": "لا أستطيع الحضور بسبب ظرف صحي. هل يمكنني استرداد قيمة التذكرة؟",
+      "answer_ar_neutral": "تُراجع الاستثناءات الصحية لكل حالة على حدة مع تقديم وثائق ثبوتية صالحة. يُرجى التواصل مع فريق الدعم قبل موعد الفعالية."
+    },
+    {
+      "section_id": "policy.refund.denied_entry",
+      "category": "Ticketing",
+      "intent": "refund_request",
+      "escalation_needed": true,
+      "question_en": "I was denied entry due to dress code or age policy. Can I get a refund?",
+      "answer_en_neutral": "Entry decisions made by venue security are final. Refunds are not typically issued for denied entry due to policy violations. Each case is reviewed individually by the support team.",
+      "question_ar": "تم منعي من الدخول بسبب الزي أو سياسة العمر. هل يمكنني استرداد قيمة التذكرة؟",
+      "answer_ar_neutral": "قرارات الدخول التي يتخذها فريق أمن الموقع نهائية. لا تُسترد عادةً قيمة التذاكر في حالات منع الدخول بسبب مخالفة السياسات. يُراجع فريق الدعم كل حالة على حدة."
+    },
+    {
+      "section_id": "policy.refund.event_change",
+      "category": "Ticketing",
+      "intent": "compensation_request",
+      "escalation_needed": true,
+      "question_en": "The event lineup or date has changed. Am I eligible for a refund?",
+      "answer_en_neutral": "If the event has been materially changed, ticket holders may be eligible for a refund or compensation. The support team will reach out with the available options, or you can contact them directly.",
+      "question_ar": "تم تغيير قائمة الفنانين أو تاريخ الفعالية. هل أنا مؤهل لاسترداد المبلغ؟",
+      "answer_ar_neutral": "إذا تم إجراء تغيير جوهري على الفعالية، قد يكون حاملو التذاكر مؤهلين لاسترداد المبلغ أو الحصول على تعويض. سيتواصل فريق الدعم معك بالخيارات المتاحة، أو يمكنك التواصل معهم مباشرة."
+    },
+    {
+      "section_id": "reservation.table",
+      "category": "Ticketing",
+      "intent": "reservation_followup",
+      "escalation_needed": true,
+      "question_en": "I requested a table reservation but have not heard back. What should I do?",
+      "answer_en_neutral": "Table reservation requests are reviewed individually. If you have not received a response within the timeframe stated at the time of request, please contact the support team with your reservation reference.",
+      "question_ar": "قدمت طلب حجز طاولة لكنني لم أتلق ردًا. ماذا أفعل؟",
+      "answer_ar_neutral": "تُراجع طلبات حجز الطاولات بشكل فردي. إذا لم تتلقَ ردًا خلال الفترة المذكورة وقت تقديم الطلب، يُرجى التواصل مع فريق الدعم مع تقديم رقم مرجع الحجز."
+    }
+  ]
+}
