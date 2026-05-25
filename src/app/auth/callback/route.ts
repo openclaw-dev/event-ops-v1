@@ -11,7 +11,18 @@ import { type NextRequest, NextResponse } from 'next/server';
  * show an error state without exposing details in the URL.
  */
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url);
+  const url = new URL(request.url);
+
+  // Canonicalize: if the magic link arrives on www.tazkar.co, redirect to the
+  // bare domain first so the session cookie is always scoped to tazkar.co.
+  // Without this, a www→apex infrastructure redirect strips the Set-Cookie
+  // header and the user lands on /admin with no session.
+  if (url.hostname === 'www.tazkar.co') {
+    url.hostname = 'tazkar.co';
+    return NextResponse.redirect(url, { status: 301 });
+  }
+
+  const { searchParams, origin } = url;
   const code = searchParams.get('code');
   const next = searchParams.get('next') ?? '/admin';
 
