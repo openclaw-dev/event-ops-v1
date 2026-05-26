@@ -2,7 +2,7 @@
 
 ## Status
 
-**v1 is complete and deployed.** All 10 issues shipped. Live at [tazkar.co](https://tazkar.co).
+**v1 and v1.5 are complete and deployed.** All 10 v1 issues shipped + data entry surface. Live at [tazkar.co](https://tazkar.co).
 
 ## Stack
 
@@ -18,10 +18,11 @@
 ### AI models in use
 - **Classifier:** `claude-haiku-4-5` — intent + language detection, temp 0.2
 - **Generator:** `claude-sonnet-4-6` — reply generation, temp 0.3
+- **Field mapping inference:** `claude-haiku-4-5` — one-time per client mastersheet format
 
 ### Supabase clients
 - `createServerClient()` — RLS-enforced, reads the user's session cookie (server components + route handlers)
-- `createAdminClient()` — service-role key, used for storage writes and audit_log inserts that RLS blocks
+- `createAdminClient()` — service-role key, used for storage writes, audit_log inserts, change_events inserts, kb_sections updates that RLS blocks
 
 ## Deployment
 
@@ -38,8 +39,10 @@ ANTHROPIC_API_KEY
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY
+DATOCMS_API_TOKEN=
+DATOCMS_EVENT_MODEL_ID=
 ```
-See `.env.example` for descriptions and where to obtain each value.
+See `.env.example` for descriptions. DatoCMS vars are present but empty — connector skips gracefully when absent.
 
 ### vercel.json
 A `vercel.json` is present at the repo root to force Next.js framework detection.
@@ -72,8 +75,9 @@ Magic-link (OTP) login via Supabase Auth:
 - `https://tazkar.co/auth/callback`
 - `https://www.tazkar.co/auth/callback`
 
-## Issues Shipped (v1)
+## Issues Shipped
 
+### v1 (support agent)
 1. Project scaffold — Next.js 14, Supabase, Tailwind, shadcn/ui
 2. Auth — magic-link login, session middleware, `/auth/callback` route
 3. Database schema — events, orders, conversations, messages, escalations, KB tables
@@ -85,48 +89,78 @@ Magic-link (OTP) login via Supabase Auth:
 9. Post-event PDF report — operator summary generated server-side
 10. Admin UI — Conversations and Escalations tabs, Simulator, Orders, KB management
 
+### v1.5 (data entry surface) — shipped 26 May 2026
+- `supabase/migrations/0013_data_entry.sql` — change_events and mastersheet_mappings tables with RLS
+- `src/lib/data-entry/normaliser.ts` — xlsx parser, vertical KV + horizontal format detection, Haiku field mapping
+- `src/lib/data-entry/change-events.ts` — recordChangeEvent() and propagateToKB() using admin client
+- `src/lib/data-entry/dato-connector.ts` — DatoCMS connector, skips gracefully if credentials absent
+- `src/app/api/data-entry/upload/route.ts` — POST /api/data-entry/upload
+- `src/app/api/data-entry/confirm/route.ts` — POST /api/data-entry/confirm
+- `src/app/admin/events/[eventId]/sync/` — Sync page with Upload and Change History tabs
+- `src/components/ui/tabs.tsx` — shadcn Tabs component added
+
 ## Conventions
 
 - **Route handlers** export `export const maxDuration` and `export const runtime = 'nodejs'` for Vercel timeout control
 - **Audit log** inserts always use `createAdminClient()` — RLS blocks user inserts
 - **Storage** uploads always use `createAdminClient()` — buckets are private
-- **No hardcoded URLs** anywhere in the codebase — origins are always derived from `window.location.origin` (client) or `request.url` (server)
+- **change_events** inserts always use `createAdminClient()` — RLS blocks user inserts
+- **kb_sections** updates in propagateToKB always use `createAdminClient()`
+- **No hardcoded URLs** anywhere in the codebase — origins always derived from `window.location.origin` (client) or `request.url` (server)
 - TypeScript strict mode; `any` casts are annotated with `// eslint-disable-next-line @typescript-eslint/no-explicit-any`
+- Package manager is **pnpm** — never use npm install
 
-## Current Task: Data Entry Surface (v1.5)
+## Schema facts (critical — read before touching the database)
 
-Adding the data entry agent on top of the existing support agent. Both share the same Supabase database.
-
-### What is being added
-- `supabase/migrations/0013_data_entry.sql` — change_events and mastersheet_mappings tables
-- `src/lib/data-entry/` — normaliser, change-events, dato-connector
-- `src/app/api/data-entry/` — upload and confirm route handlers
-- `src/app/admin/events/[eventId]/sync/` — operator-facing sync UI with upload and change history tabs
-
-### Only two existing files should be modified
-1. `src/app/admin/events/[eventId]/layout.tsx` — add Sync nav item
-2. `.env.local` and `.env.example` — add DATOCMS_API_TOKEN and DATOCMS_EVENT_MODEL_ID
-
-### Schema facts critical for this task
-- `events.name` — not name_en. Single field.
-- `events.config JSONB` — stores ticket_tiers, refund_policy, doors_open_local, dress_code, etc. as nested blob
+- `events.name` — not name_en. Single language field.
+- `events.config JSONB` — stores ticket_tiers, refund_policy, doors_open_local, dress_code, parking_info, escalation_contacts, escalation_keywords, vip_orders_always_escalate as a nested blob
 - `events.start_date` / `end_date` — DATE type
-- `kb_sections` already exists — change pipeline updates rows in it, does not recreate it
-- `EventSetupFormData` in `src/lib/schemas.ts` — canonical shape. Normaliser must output this.
-- `current_user_operator_ids()` — RLS helper already exists, use in new policies
-- `createAdminClient()` — use for change_events and kb_sections writes (RLS blocks user-scoped writes)
+- `kb_sections` — already exists from v1. section_id is unique per event. Do not recreate. propagateToKB updates rows here.
+- `change_events` — added in 0013. Records every confirmed field change. Uses admin client.
+- `mastersheet_mappings` — added in 0013. Stores inferred field mapping per operator format.
+- `EventSetupFormData` in `src/lib/schemas.ts` — canonical shape for event data. Normaliser outputs this shape.
+- `current_user_operator_ids()` — RLS helper function, already exists, use in new migration policies
 
-### Patterns to follow
+## Key file locations
+
+- Anthropic client: `src/lib/agent/anthropic-client.ts` — do not create a new client
+- Supabase server client: `src/lib/supabase/server.ts`
+- Supabase admin client: `src/lib/supabase/admin.ts`
+- Canonical types: `src/lib/agent/types.ts`
+- Canonical schemas: `src/lib/schemas.ts`
+- Data entry normaliser: `src/lib/data-entry/normaliser.ts`
+- Data entry change events: `src/lib/data-entry/change-events.ts`
+- DatoCMS connector: `src/lib/data-entry/dato-connector.ts`
+
+## Patterns to follow
+
 - Auth in route handlers: copy `src/app/api/kb/upload/route.ts`
 - Page data fetching: copy `src/app/admin/events/[eventId]/kb/page.tsx`
 - Upload form component: copy `src/app/admin/events/[eventId]/kb/_components/kb-upload-form.tsx`
-- Nav items in event layout: `src/app/admin/events/[eventId]/layout.tsx`
+- Change history table: copy `src/app/admin/events/[eventId]/sync/_components/history-tab.tsx`
+- Nav items: `src/app/admin/_components/sidebar.tsx` — EVENT_SUB_NAV array
 
-### Package manager
-pnpm — not npm. Use `pnpm add` not `npm install`.
+## What still needs external credentials
 
-### Rules
-- No new packages without asking
-- No any types (annotate eslint-disable if genuinely unavoidable)
+- DatoCMS: set DATOCMS_API_TOKEN and DATOCMS_EVENT_MODEL_ID in Vercel env vars + .env.local
+- NOFOMO backend: pending internal API confirmation from tech lead (holiday until next week)
+
+## Next feature to build: WhatsApp change management (v1.6)
+
+A promoter sends free-text to a WhatsApp number ("doors now 10pm, VIP is 950"). The system:
+1. Extracts structured field changes via Haiku
+2. Shows the operator a diff
+3. On confirmation writes to Supabase via existing `recordChangeEvent` and `propagateToKB`
+4. Calls `pushEventToDato` for DatoCMS sync
+
+Spec will be in `whatsapp_change_mgmt_spec.md` once written.
+
+## Rules for all future Claude Code sessions
+
+- Read this file first
 - Read existing files before writing new ones
-- Run `pnpm typecheck` after all steps complete
+- No new packages without asking
+- No any types
+- pnpm not npm
+- createAdminClient() for all change_events, kb_sections, audit_log writes
+- Run pnpm typecheck after completing all steps
