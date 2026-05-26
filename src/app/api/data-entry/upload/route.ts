@@ -1,0 +1,155 @@
+/**
+ * POST /api/data-entry/upload
+ *
+ * Accepts an xlsx mastersheet, calls the normaliser to produce column→field
+ * mappings via Claude Haiku, merges any previously-saved confidence scores,
+ * and returns a MappingResult.
+ *
+ * Multipart form fields:
+ *   mastersheet  — xlsx file, max 5 MB
+ *   event_id     — UUID of the target event (used to scope the operator check)
+ *
+ * Authorization: Supabase session cookie (RLS-enforced reads).
+ */
+
+import { NextResponse } from 'next/server';
+
+import { createServerClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { normaliseSheet } from '@/lib/data-entry/normaliser';
+import type { MappingResult, FieldMapping } from '@/lib/data-entry/normaliser';
+
+const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+
+export const runtime = 'nodejs';
+export const maxDuration = 30;
+
+export async function POST(request: Request): Promise<NextResponse> {
+  // ── 1. Parse multipart body ──────────────────────────────────────────────
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return NextResponse.json({ error: 'Invalid multipart form data.' }, { status: 400 });
+  }
+
+  const file = formData.get('mastersheet');
+  const eventId = formData.get('event_id');
+
+  if (!(file instanceof File)) {
+    return NextResponse.json({ error: 'No file provided. Use the "mastersheet" field.' }, { status: 400 });
+  }
+  if (typeof eventId !== 'string' || !eventId) {
+    return NextResponse.json({ error: 'event_id is required.' }, { status: 400 });
+  }
+
+  // ── 2. Validate file ─────────────────────────────────────────────────────
+  if (file.size > MAX_BYTES) {
+    return NextResponse.json(
+      { error: `File exceeds the 5 MB limit (got ${(file.size / 1024 / 1024).toFixed(1)} MB).` },
+      { status: 400 },
+    );
+  }
+
+  const ext = file.name.split('.').pop()?.toLowerCase();
+  const mimeOk =
+    file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+    file.type === 'application/vnd.ms-excel' ||
+    file.type === 'application/octet-stream';
+  const extOk = ext === 'xlsx';
+
+  if (!extOk || !mimeOk) {
+    return NextResponse.json(
+      { error: 'Only .xlsx files are supported.' },
+      { status: 400 },
+    );
+  }
+
+  // ── 3. Authenticate ──────────────────────────────────────────────────────
+  const supabase = createServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
+  }
+
+  // RLS check: confirm the user can access this event.
+  const { data: event, error: eventError } = await supabase
+    .from('events')
+    .select('id, operator_id')
+    .eq('id', eventId)
+    .is('deleted_at', null)
+    .single();
+
+  if (eventError || !event) {
+    return NextResponse.json({ error: 'Event not found or access denied.' }, { status: 404 });
+  }
+
+  // Resolve the operator_users row.
+  const { data: operatorUser } = await supabase
+    .from('operator_users')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('operator_id', event.operator_id)
+    .single();
+
+  if (!operatorUser) {
+    return NextResponse.json({ error: 'No operator membership found.' }, { status: 403 });
+  }
+
+  // ── 4. Run normaliser ────────────────────────────────────────────────────
+  let result: MappingResult;
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    result = await normaliseSheet(buffer);
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Normalisation failed: ${err instanceof Error ? err.message : String(err)}` },
+      { status: 500 },
+    );
+  }
+
+  // ── 5. Merge saved confidence scores from mastersheet_mappings ───────────
+  try {
+    const admin = createAdminClient();
+    const { data: savedMapping } = await admin
+      .from('mastersheet_mappings')
+      .select('confidence_scores, field_map')
+      .eq('operator_id', event.operator_id)
+      .order('last_used_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (savedMapping) {
+      const savedScores = (savedMapping.confidence_scores ?? {}) as Record<string, number>;
+      const savedFieldMap = (savedMapping.field_map ?? {}) as Record<string, string>;
+
+      result.mappings = result.mappings.map((m): FieldMapping => {
+        const savedConfidence = savedScores[m.source_column];
+        const savedTarget = savedFieldMap[m.source_column];
+
+        if (savedConfidence !== undefined && savedTarget) {
+          // Boost confidence for columns we've seen before.
+          const mergedConfidence = Math.max(m.confidence, savedConfidence);
+          return {
+            ...m,
+            target_field: savedTarget,
+            confidence: mergedConfidence,
+            needs_review: mergedConfidence < 0.85,
+          };
+        }
+        return m;
+      });
+
+      // Recompute aggregate counts.
+      result.high_confidence_count = result.mappings.filter((m) => !m.needs_review).length;
+      result.needs_review_count = result.mappings.filter((m) => m.needs_review).length;
+    }
+  } catch {
+    // Non-fatal: proceed without saved mappings.
+  }
+
+  return NextResponse.json(result, { status: 200 });
+}

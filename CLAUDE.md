@@ -92,3 +92,41 @@ Magic-link (OTP) login via Supabase Auth:
 - **Storage** uploads always use `createAdminClient()` — buckets are private
 - **No hardcoded URLs** anywhere in the codebase — origins are always derived from `window.location.origin` (client) or `request.url` (server)
 - TypeScript strict mode; `any` casts are annotated with `// eslint-disable-next-line @typescript-eslint/no-explicit-any`
+
+## Current Task: Data Entry Surface (v1.5)
+
+Adding the data entry agent on top of the existing support agent. Both share the same Supabase database.
+
+### What is being added
+- `supabase/migrations/0013_data_entry.sql` — change_events and mastersheet_mappings tables
+- `src/lib/data-entry/` — normaliser, change-events, dato-connector
+- `src/app/api/data-entry/` — upload and confirm route handlers
+- `src/app/admin/events/[eventId]/sync/` — operator-facing sync UI with upload and change history tabs
+
+### Only two existing files should be modified
+1. `src/app/admin/events/[eventId]/layout.tsx` — add Sync nav item
+2. `.env.local` and `.env.example` — add DATOCMS_API_TOKEN and DATOCMS_EVENT_MODEL_ID
+
+### Schema facts critical for this task
+- `events.name` — not name_en. Single field.
+- `events.config JSONB` — stores ticket_tiers, refund_policy, doors_open_local, dress_code, etc. as nested blob
+- `events.start_date` / `end_date` — DATE type
+- `kb_sections` already exists — change pipeline updates rows in it, does not recreate it
+- `EventSetupFormData` in `src/lib/schemas.ts` — canonical shape. Normaliser must output this.
+- `current_user_operator_ids()` — RLS helper already exists, use in new policies
+- `createAdminClient()` — use for change_events and kb_sections writes (RLS blocks user-scoped writes)
+
+### Patterns to follow
+- Auth in route handlers: copy `src/app/api/kb/upload/route.ts`
+- Page data fetching: copy `src/app/admin/events/[eventId]/kb/page.tsx`
+- Upload form component: copy `src/app/admin/events/[eventId]/kb/_components/kb-upload-form.tsx`
+- Nav items in event layout: `src/app/admin/events/[eventId]/layout.tsx`
+
+### Package manager
+pnpm — not npm. Use `pnpm add` not `npm install`.
+
+### Rules
+- No new packages without asking
+- No any types (annotate eslint-disable if genuinely unavoidable)
+- Read existing files before writing new ones
+- Run `pnpm typecheck` after all steps complete
