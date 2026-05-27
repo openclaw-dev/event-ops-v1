@@ -2,5 +2,11 @@
   "framework": "nextjs",
   "buildCommand": "pnpm build",
   "devCommand": "pnpm dev",
-  "installCommand": "pnpm install --frozen-lockfile"
+  "installCommand": "pnpm install --frozen-lockfile",
+  "crons": [
+    {
+      "path": "/api/cron/expire-pending",
+      "schedule": "0 * * * *"
+    }
+  ]
 }

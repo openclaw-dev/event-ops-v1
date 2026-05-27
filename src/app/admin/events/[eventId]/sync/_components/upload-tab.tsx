@@ -371,8 +371,12 @@ export function UploadTab({ eventId }: UploadTabProps) {
                         <span className="font-mono text-xs">{m.target_field}</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell max-w-[160px] truncate">
-                      {m.sample_value}
+                    <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">
+                      {m.sample_value
+                        ? m.sample_value.length > 40
+                          ? m.sample_value.slice(0, 40) + '…'
+                          : m.sample_value
+                        : '—'}
                     </td>
                     <td className="px-3 py-2 text-center">
                       <Badge

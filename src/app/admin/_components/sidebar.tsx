@@ -12,6 +12,7 @@ import {
   Plus,
   ChevronRight,
   RefreshCw,
+  Users,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -47,6 +48,7 @@ const EVENT_SUB_NAV = [
   { label: 'Escalations', segment: 'escalations', icon: AlertTriangle, wip: true },
   { label: 'Report', segment: 'report', icon: FileBarChart2, wip: true },
   { label: 'Sync', segment: 'sync', icon: RefreshCw, wip: false },
+  { label: 'Promoters', segment: 'promoters', icon: Users, wip: false },
 ] as const;
 
 function EventNavItem({ event }: { event: Event }) {

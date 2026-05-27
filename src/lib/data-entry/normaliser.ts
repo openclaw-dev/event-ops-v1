@@ -359,15 +359,37 @@ export async function normaliseSheet(buf: Buffer): Promise<MappingResult> {
     };
   }
 
+  // Build a lookup of actual cell-B values for vertical sheets.
+  // Haiku is instructed to echo sample_value back but doesn't do so reliably —
+  // so for vertical KV sheets we always use the value we already extracted.
+  const verticalValueLookup: Record<string, Record<string, string>> = {};
+  for (const sample of samples) {
+    if (sample.format === 'vertical') {
+      const lookup: Record<string, string> = {};
+      for (const { field_name, value } of sample.kv_pairs) {
+        lookup[field_name] = value;
+      }
+      verticalValueLookup[sample.sheetName] = lookup;
+    }
+  }
+
   let mappings: FieldMapping[];
   try {
     mappings = (haikuResponse.mappings ?? []).map((m) => {
       const confidence = typeof m.confidence === 'number' ? m.confidence : 0;
+
+      // For vertical sheets use the known cell-B value; fall back to whatever
+      // Haiku returned (which covers horizontal sheets correctly).
+      const kvLookup = verticalValueLookup[m.source_sheet];
+      const sample_value = kvLookup
+        ? (kvLookup[m.source_column] ?? String(m.sample_value ?? ''))
+        : String(m.sample_value ?? '');
+
       return {
         source_sheet: m.source_sheet,
         source_column: m.source_column,
         target_field: m.target_field,
-        sample_value: String(m.sample_value ?? ''),
+        sample_value,
         confidence,
         needs_review: confidence < 0.85,
       };
