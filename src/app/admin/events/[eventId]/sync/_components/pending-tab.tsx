@@ -74,7 +74,6 @@ const STATUS_BADGE: Record<PendingChange['status'], { label: string; className: 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface PendingTabProps {
-  eventId: string;
   initialPendingChanges: PendingChange[];
 }
 

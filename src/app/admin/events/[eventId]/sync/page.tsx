@@ -92,7 +92,7 @@ export default async function SyncPage({ params }: SyncPageProps) {
         </TabsContent>
 
         <TabsContent value="pending" className="mt-4">
-          <PendingTab eventId={params.eventId} initialPendingChanges={pendingChanges} />
+          <PendingTab initialPendingChanges={pendingChanges} />
         </TabsContent>
 
         <TabsContent value="history" className="mt-4">
