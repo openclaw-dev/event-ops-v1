@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 
 import { createServerClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { findPendingByEvent, type PendingChange } from '@/lib/data-entry/pending-changes';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -43,6 +44,21 @@ export default async function SyncPage({ params }: SyncPageProps) {
     kb_sections_updated: (row.kb_sections_updated as string[]) ?? [],
     confirmed_at: row.confirmed_at as string,
   }));
+
+  // Fetch promoters for this event so "Changed by" can show display names.
+  const admin = createAdminClient();
+  const { data: rawPromoters } = await admin
+    .from('promoters')
+    .select('id, display_name, phone_e164')
+    .eq('event_id', params.eventId);
+
+  const promoterLookup: Record<string, { display_name: string; phone_e164: string }> = {};
+  for (const p of rawPromoters ?? []) {
+    promoterLookup[p.id as string] = {
+      display_name: p.display_name as string,
+      phone_e164: p.phone_e164 as string,
+    };
+  }
 
   // Fetch pending WhatsApp changes (admin client inside findPendingByEvent).
   let pendingChanges: PendingChange[] = [];
@@ -96,7 +112,7 @@ export default async function SyncPage({ params }: SyncPageProps) {
         </TabsContent>
 
         <TabsContent value="history" className="mt-4">
-          <HistoryTab rows={changeEvents} />
+          <HistoryTab rows={changeEvents} promoterLookup={promoterLookup} />
         </TabsContent>
       </Tabs>
     </div>

@@ -275,18 +275,31 @@ export default async function ReportPage({ params }: ReportPageProps) {
 
       {/* ── KB Gap Analysis ───────────────────────────────────────────────── */}
       <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Knowledge Base Gaps
-          </h3>
-          <span className="text-xs text-muted-foreground">
-            {gaps.coverage_score}% coverage
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Knowledge Base Coverage
+        </h3>
+
+        {/* Coverage score — big number */}
+        <div className="flex items-end gap-3">
+          <span
+            className={`text-4xl font-bold tabular-nums ${
+              gaps.coverage_score >= 80
+                ? 'text-emerald-600'
+                : gaps.coverage_score >= 50
+                ? 'text-amber-600'
+                : 'text-red-600'
+            }`}
+          >
+            {gaps.coverage_score}%
+          </span>
+          <span className="mb-1 text-sm text-muted-foreground">
+            Questions resolved without escalation
           </span>
         </div>
 
         {/* Coverage bar */}
         <div className="space-y-1">
-          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
             <div
               className={`h-full rounded-full transition-all ${
                 gaps.coverage_score >= 80
@@ -299,7 +312,8 @@ export default async function ReportPage({ params }: ReportPageProps) {
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            {gaps.coverage_score}% of conversations resolved without escalation
+            {gaps.total_conversations - gaps.escalated_count} of{' '}
+            {gaps.total_conversations} conversations handled without escalation
           </p>
         </div>
 
@@ -315,6 +329,9 @@ export default async function ReportPage({ params }: ReportPageProps) {
                   <th className="px-3 py-2.5 text-left font-medium text-muted-foreground">
                     Unanswered topic
                   </th>
+                  <th className="px-3 py-2.5 text-left font-medium text-muted-foreground hidden md:table-cell">
+                    Example question
+                  </th>
                   <th className="px-3 py-2.5 text-center font-medium text-muted-foreground w-16">
                     Count
                   </th>
@@ -325,15 +342,20 @@ export default async function ReportPage({ params }: ReportPageProps) {
               </thead>
               <tbody className="divide-y">
                 {gaps.unanswered.slice(0, 5).map((gap) => (
-                  <tr key={gap.question} className="hover:bg-muted/20">
-                    <td className="px-3 py-2.5 font-mono text-xs">{gap.question}</td>
+                  <tr key={gap.intent} className="hover:bg-muted/20">
+                    <td className="px-3 py-2.5 font-mono text-xs">{gap.intent}</td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground hidden md:table-cell">
+                      <span className="line-clamp-1">
+                        {gap.example_message || '—'}
+                      </span>
+                    </td>
                     <td className="px-3 py-2.5 text-center tabular-nums text-xs text-muted-foreground">
                       {gap.count}
                     </td>
                     <td className="px-3 py-2.5 text-right">
                       <AddToKbModal
                         eventId={params.eventId}
-                        defaultTitle={gap.question}
+                        defaultTitle={gap.intent}
                         triggerLabel="Add to KB"
                         triggerClassName="h-7 gap-1 px-2 text-[11px]"
                       />
@@ -342,25 +364,6 @@ export default async function ReportPage({ params }: ReportPageProps) {
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
-
-        {gaps.escalated_intents.length > 0 && (
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">
-              Intents in escalated conversations
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {gaps.escalated_intents.slice(0, 8).map((ei) => (
-                <span
-                  key={ei.intent}
-                  className="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5 font-mono text-xs"
-                >
-                  {ei.intent}
-                  <span className="text-muted-foreground">×{ei.count}</span>
-                </span>
-              ))}
-            </div>
           </div>
         )}
       </section>

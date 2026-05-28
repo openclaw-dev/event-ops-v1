@@ -6,7 +6,7 @@ import { parseMarkdown } from '@/lib/parsers/kb-markdown';
 import { parseJson } from '@/lib/parsers/kb-json';
 import { xlsxToMarkdown, docxToMarkdown } from '@/lib/kb/converters';
 
-const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_BYTES = 50 * 1024 * 1024; // 50 MB
 const BUCKET = 'kb';
 const PAGE_SIZE = 500; // max sections per upsert batch
 
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
   // ── 2. Validate file ─────────────────────────────────────────────────────
   if (file.size > MAX_BYTES) {
     return NextResponse.json(
-      { error: `File exceeds the 5 MB limit (got ${(file.size / 1024 / 1024).toFixed(1)} MB).` },
+      { error: `File exceeds the 50 MB limit (got ${(file.size / 1024 / 1024).toFixed(1)} MB).` },
       { status: 413 },
     );
   }

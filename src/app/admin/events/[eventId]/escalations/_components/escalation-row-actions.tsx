@@ -82,24 +82,24 @@ export function EscalationRowActions({
         </Button>
       )}
       {status === 'resolved' && (
-        <>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={isPending}
-            onClick={() => handle(reopenEscalation)}
-            className="h-7 gap-1 px-2 text-[11px]"
-          >
-            <RotateCcw className="h-3 w-3" />
-            Reopen
-          </Button>
-          <AddToKbModal
-            eventId={eventId}
-            defaultTitle={summary}
-            triggerClassName="h-7 gap-1 px-2 text-[11px]"
-          />
-        </>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={isPending}
+          onClick={() => handle(reopenEscalation)}
+          className="h-7 gap-1 px-2 text-[11px]"
+        >
+          <RotateCcw className="h-3 w-3" />
+          Reopen
+        </Button>
       )}
+      {/* Add to KB available on every row so the operator can document
+          the correct answer regardless of whether it's been resolved yet. */}
+      <AddToKbModal
+        eventId={eventId}
+        defaultTitle={summary}
+        triggerClassName="h-7 gap-1 px-2 text-[11px]"
+      />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -19,6 +20,11 @@ export interface ChangeEventRow {
   fields_changed: string[];
   kb_sections_updated: string[];
   confirmed_at: string;
+}
+
+export interface PromoterInfo {
+  display_name: string;
+  phone_e164: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -46,63 +52,101 @@ const CHANNEL_BADGE_CLASS: Record<string, string> = {
 
 const col = createColumnHelper<ChangeEventRow>();
 
-const columns = [
-  col.accessor('confirmed_at', {
-    header: 'Time',
-    cell: (info) => (
-      <span className="whitespace-nowrap text-xs text-muted-foreground">
-        {relativeTime(info.getValue())}
-      </span>
-    ),
-  }),
-  col.accessor('changed_by', {
-    header: 'Changed by',
-    cell: (info) => <span className="text-sm">{info.getValue()}</span>,
-  }),
-  col.accessor('channel', {
-    header: 'Channel',
-    cell: (info) => (
-      <Badge
-        variant="outline"
-        className={cn('text-xs capitalize', CHANNEL_BADGE_CLASS[info.getValue()] ?? '')}
-      >
-        {info.getValue()}
-      </Badge>
-    ),
-  }),
-  col.accessor('fields_changed', {
-    header: 'Fields changed',
-    cell: (info) => (
-      <div className="flex flex-wrap gap-1">
-        {info.getValue().map((f) => (
-          <Badge key={f} variant="secondary" className="font-mono text-xs">
-            {f}
-          </Badge>
-        ))}
-      </div>
-    ),
-  }),
-  col.accessor('kb_sections_updated', {
-    header: 'KB sections',
-    cell: (info) => {
-      const count = info.getValue().length;
-      if (count === 0) return <span className="text-xs text-muted-foreground">—</span>;
-      return (
-        <Badge variant="outline" className="text-xs">
-          {count} updated
-        </Badge>
-      );
-    },
-  }),
-];
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
 interface HistoryTabProps {
   rows: ChangeEventRow[];
+  promoterLookup: Record<string, PromoterInfo>;
 }
 
-export function HistoryTab({ rows }: HistoryTabProps) {
+export function HistoryTab({ rows, promoterLookup }: HistoryTabProps) {
+  const columns = useMemo(
+    () => [
+      col.accessor('confirmed_at', {
+        header: 'Time',
+        cell: (info) => (
+          <span className="whitespace-nowrap text-xs text-muted-foreground">
+            {relativeTime(info.getValue())}
+          </span>
+        ),
+      }),
+      col.accessor('changed_by', {
+        header: 'Changed by',
+        cell: ({ getValue, row }) => {
+          const changedBy = getValue();
+          const { channel } = row.original;
+
+          if (channel === 'mastersheet') {
+            return <span className="text-sm">Operator</span>;
+          }
+
+          if (channel === 'whatsapp') {
+            const promoter = promoterLookup[changedBy];
+            if (promoter) {
+              return (
+                <div>
+                  <span className="text-sm">{promoter.display_name}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {promoter.phone_e164}
+                  </span>
+                </div>
+              );
+            }
+            // Promoter not found — show truncated UUID.
+            return (
+              <span className="font-mono text-xs text-muted-foreground">
+                {changedBy.slice(0, 8)}
+              </span>
+            );
+          }
+
+          // dashboard / system / unknown
+          return (
+            <span className="font-mono text-xs text-muted-foreground">
+              {changedBy.slice(0, 8)}
+            </span>
+          );
+        },
+      }),
+      col.accessor('channel', {
+        header: 'Channel',
+        cell: (info) => (
+          <Badge
+            variant="outline"
+            className={cn('text-xs capitalize', CHANNEL_BADGE_CLASS[info.getValue()] ?? '')}
+          >
+            {info.getValue()}
+          </Badge>
+        ),
+      }),
+      col.accessor('fields_changed', {
+        header: 'Fields changed',
+        cell: (info) => (
+          <div className="flex flex-wrap gap-1">
+            {info.getValue().map((f) => (
+              <Badge key={f} variant="secondary" className="font-mono text-xs">
+                {f}
+              </Badge>
+            ))}
+          </div>
+        ),
+      }),
+      col.accessor('kb_sections_updated', {
+        header: 'KB sections',
+        cell: (info) => {
+          const count = info.getValue().length;
+          if (count === 0) return <span className="text-xs text-muted-foreground">—</span>;
+          return (
+            <Badge variant="outline" className="text-xs">
+              {count} updated
+            </Badge>
+          );
+        },
+      }),
+    ],
+    [promoterLookup],
+  );
+
   const table = useReactTable({
     data: rows,
     columns,

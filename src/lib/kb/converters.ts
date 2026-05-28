@@ -1,11 +1,13 @@
 /**
  * Converters for non-markdown KB file formats.
  *
- * xlsxToMarkdown — parses an Excel workbook and produces markdown.
+ * xlsxToMarkdown — parses an Excel workbook and produces structured markdown.
  * docxToMarkdown — converts a Word document to markdown via mammoth.
  *
- * Both pass the raw result through a Haiku normalisation prompt that
- * enforces ## headings + bullet points and strips formatting artefacts.
+ * Both functions check whether the extracted text is already structured
+ * (contains ## headings + bullet points). If it is, Haiku is skipped and the
+ * raw text is returned directly. Only unstructured content goes through the
+ * Haiku normalisation pass.
  */
 
 import * as XLSX from 'xlsx';
@@ -16,29 +18,38 @@ import { claude } from '@/lib/agent/anthropic-client';
 const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 
 // ---------------------------------------------------------------------------
-// Haiku normalisation pass
+// Helpers
 // ---------------------------------------------------------------------------
 
-async function normaliseWithHaiku(raw: string): Promise<string> {
+/** True when text already has ## headings AND bullet points (- at line start). */
+function isAlreadyStructured(text: string): boolean {
+  return text.includes('##') && /^- /m.test(text);
+}
+
+/** True when text already has ## headings (used for docx check). */
+function hasMarkdownHeadings(text: string): boolean {
+  return text.includes('##');
+}
+
+// ---------------------------------------------------------------------------
+// Haiku normalisation pass — only called when content is unstructured
+// ---------------------------------------------------------------------------
+
+async function normaliseWithHaiku(rawText: string): Promise<string> {
   const message = await claude.messages.create({
     model: HAIKU_MODEL,
     max_tokens: 2000,
     temperature: 0,
-    messages: [
-      {
-        role: 'user',
-        content:
-          'Convert the following event FAQ content into clean markdown sections. ' +
-          'Each section must have a ## heading and use bullet points. ' +
-          'Preserve all factual content. Remove formatting artifacts. ' +
-          'Return only the markdown, no preamble.\n\nContent:\n' +
-          raw,
-      },
-    ],
+    system:
+      'Convert the following event FAQ content into clean markdown sections.\n' +
+      'Each section must have a ## heading and use bullet points.\n' +
+      'Preserve all factual content exactly. Remove formatting artifacts.\n' +
+      'Return only the markdown, no preamble, no explanation.',
+    messages: [{ role: 'user', content: rawText }],
   });
 
   const block = message.content[0];
-  if (block.type !== 'text') {
+  if (!block || block.type !== 'text') {
     throw new Error('Unexpected response type from Haiku normalisation.');
   }
   return block.text.trim();
@@ -49,14 +60,19 @@ async function normaliseWithHaiku(raw: string): Promise<string> {
 // ---------------------------------------------------------------------------
 
 /**
- * Converts an xlsx/xls buffer to a markdown string.
+ * Converts an xlsx buffer to a markdown string.
  *
- * Detection heuristic:
- *   - If the first sheet has exactly 2 columns and the first row headers
- *     contain "question"/"q" and "answer"/"a", render as Q/A pairs.
- *   - Otherwise render each sheet as a markdown table.
+ * FAQ format detection per sheet: first row has exactly 2 non-empty cells
+ * and at least one of them matches /question|^q$/i.
+ * FAQ rows are rendered as:
+ *   **Q:** <question>
+ *   **A:** <answer>
  *
- * The raw result is then normalised through Haiku.
+ * Non-FAQ sheets have their cells rendered as bullet points under the sheet
+ * name as a ## heading.
+ *
+ * If the resulting raw text already contains ## headings and bullet points,
+ * Haiku is skipped.
  */
 export async function xlsxToMarkdown(buffer: Buffer): Promise<string> {
   const workbook = XLSX.read(buffer, { type: 'buffer' });
@@ -71,48 +87,59 @@ export async function xlsxToMarkdown(buffer: Buffer): Promise<string> {
     const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
     if (rows.length === 0) continue;
 
-    const header = rows[0] as string[];
-    const dataRows = rows.slice(1).filter((r) => r.some((c) => String(c).trim() !== ''));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const firstRow = (rows[0] as any[]).map((c) => String(c ?? '').trim());
+    const nonEmptyCells = firstRow.filter((c) => c !== '');
 
-    // FAQ format detection: 2 columns with question/answer headers
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const dataRows = (rows.slice(1) as any[][]).filter((r) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (r as any[]).some((c) => String(c).trim() !== ''),
+    );
+
+    // FAQ detection: exactly 2 non-empty header cells, one contains
+    // "question" or is exactly "Q" (case-insensitive)
     const isFaq =
-      header.length === 2 &&
-      /^(question|q)$/i.test(String(header[0]).trim()) &&
-      /^(answer|a)$/i.test(String(header[1]).trim());
+      nonEmptyCells.length === 2 &&
+      nonEmptyCells.some((c) => /question|^q$/i.test(c));
 
     parts.push(`## ${sheetName}`);
+    parts.push('');
 
     if (isFaq) {
-      for (const row of dataRows) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const row of dataRows as any[][]) {
         const q = String(row[0] ?? '').trim();
         const a = String(row[1] ?? '').trim();
         if (q) {
-          parts.push(`**Q: ${q}**`);
-          parts.push(`A: ${a}`);
+          parts.push(`**Q:** ${q}`);
+          parts.push(`**A:** ${a}`);
           parts.push('');
         }
       }
     } else {
-      // Render as markdown table
-      const colWidths = header.map((h, i) =>
-        Math.max(
-          String(h).length,
-          ...dataRows.map((r) => String(r[i] ?? '').length),
-        ),
-      );
-      const sep = colWidths.map((w) => '-'.repeat(Math.max(w, 3))).join(' | ');
-      const head = header.map((h, i) => String(h).padEnd(colWidths[i] ?? 3)).join(' | ');
-      parts.push(`| ${head} |`);
-      parts.push(`| ${sep} |`);
-      for (const row of dataRows) {
-        const cells = header.map((_, i) => String(row[i] ?? '').padEnd(colWidths[i] ?? 3));
-        parts.push(`| ${cells.join(' | ')} |`);
+      // Render non-empty cells as bullet points
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const row of dataRows as any[][]) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const cells = (row as any[])
+          .map((c) => String(c ?? '').trim())
+          .filter((c) => c !== '');
+        if (cells.length > 0) {
+          parts.push(`- ${cells.join(' — ')}`);
+        }
       }
       parts.push('');
     }
   }
 
-  const raw = parts.join('\n');
+  const raw = parts.join('\n').trim();
+
+  // Already structured — skip Haiku
+  if (isAlreadyStructured(raw)) {
+    return raw;
+  }
+
   return normaliseWithHaiku(raw);
 }
 
@@ -121,29 +148,36 @@ export async function xlsxToMarkdown(buffer: Buffer): Promise<string> {
 // ---------------------------------------------------------------------------
 
 /**
- * Converts a .docx buffer to markdown using mammoth (HTML pass), then
- * normalises the result through Haiku.
+ * Converts a .docx buffer to markdown using mammoth.convertToMarkdown.
  *
- * mammoth's type definitions omit convertToMarkdown; we use convertToHtml
- * (which is typed) and pass the HTML directly to Haiku, which handles the
- * HTML→markdown conversion as part of its normalisation prompt.
+ * convertToMarkdown is present at runtime in mammoth v1.x but is absent from
+ * the published TypeScript definitions, so an any cast is required.
+ *
+ * If the resulting markdown already contains ## headings, Haiku is skipped.
  */
 export async function docxToMarkdown(buffer: Buffer): Promise<string> {
-  const result = await mammoth.convertToHtml({ buffer });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = await (mammoth as any).convertToMarkdown({ buffer }) as {
+    value: string;
+    messages: Array<{ type: string; message: string }>;
+  };
 
-  if (result.messages.length > 0) {
-    const warnings = result.messages
-      .filter((m) => m.type === 'warning')
-      .map((m) => m.message)
-      .join('; ');
-    if (warnings) {
-      console.warn('[docxToMarkdown] mammoth warnings:', warnings);
-    }
+  const warnings = (result.messages ?? [])
+    .filter((m) => m.type === 'warning')
+    .map((m) => m.message)
+    .join('; ');
+  if (warnings) {
+    console.warn('[docxToMarkdown] mammoth warnings:', warnings);
   }
 
-  const raw = result.value.trim();
+  const raw = (result.value ?? '').trim();
   if (!raw) {
     throw new Error('No content extracted from the Word document.');
+  }
+
+  // Already structured markdown — skip Haiku
+  if (hasMarkdownHeadings(raw)) {
+    return raw;
   }
 
   return normaliseWithHaiku(raw);

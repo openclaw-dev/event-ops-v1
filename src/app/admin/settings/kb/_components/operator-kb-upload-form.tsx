@@ -54,8 +54,8 @@ export function OperatorKbUploadForm({ operatorId }: OperatorKbUploadFormProps) 
     if (!files || files.length === 0) return;
     const file = files[0];
     const ext = file.name.split('.').pop()?.toLowerCase();
-    if (ext !== 'md' && ext !== 'markdown' && ext !== 'json') {
-      setError('Only .md and .json files are supported.');
+    if (ext !== 'md' && ext !== 'markdown' && ext !== 'json' && ext !== 'xlsx' && ext !== 'docx') {
+      setError('Only .md, .json, .xlsx, and .docx files are supported.');
       return;
     }
     void upload(file);
@@ -94,13 +94,15 @@ export function OperatorKbUploadForm({ operatorId }: OperatorKbUploadFormProps) 
       >
         <Upload className="mb-2 h-8 w-8 text-muted-foreground/60" />
         <p className="text-sm font-medium">
-          {uploading ? 'Uploading…' : 'Drop .md or .json here, or click to browse'}
+          {uploading ? 'Uploading…' : 'Drop a file here, or click to browse'}
         </p>
-        <p className="mt-1 text-xs text-muted-foreground">Max 5 MB</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Supported: Markdown, JSON, Excel (.xlsx), Word (.docx)
+        </p>
         <input
           ref={inputRef}
           type="file"
-          accept=".md,.markdown,.json"
+          accept=".md,.markdown,.json,.xlsx,.docx"
           className="hidden"
           onChange={(e) => handleFiles(e.target.files)}
         />
