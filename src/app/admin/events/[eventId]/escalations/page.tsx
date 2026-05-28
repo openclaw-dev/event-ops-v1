@@ -277,6 +277,7 @@ export default async function EscalationsPage({
                           eventId={params.eventId}
                           escalationId={e.id}
                           status={e.status}
+                          summary={e.summary_for_ops}
                         />
                       </td>
                     </tr>

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Check, Hand, RotateCcw } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { AddToKbModal } from '@/components/add-to-kb-modal';
 
 import {
   claimEscalation,
@@ -16,12 +17,15 @@ interface EscalationRowActionsProps {
   eventId: string;
   escalationId: string;
   status: 'open' | 'claimed' | 'resolved' | 'reopened';
+  /** Summary used as the pre-filled title in the Add to KB modal. */
+  summary: string;
 }
 
 export function EscalationRowActions({
   eventId,
   escalationId,
   status,
+  summary,
 }: EscalationRowActionsProps) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -78,16 +82,23 @@ export function EscalationRowActions({
         </Button>
       )}
       {status === 'resolved' && (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={isPending}
-          onClick={() => handle(reopenEscalation)}
-          className="h-7 gap-1 px-2 text-[11px]"
-        >
-          <RotateCcw className="h-3 w-3" />
-          Reopen
-        </Button>
+        <>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={isPending}
+            onClick={() => handle(reopenEscalation)}
+            className="h-7 gap-1 px-2 text-[11px]"
+          >
+            <RotateCcw className="h-3 w-3" />
+            Reopen
+          </Button>
+          <AddToKbModal
+            eventId={eventId}
+            defaultTitle={summary}
+            triggerClassName="h-7 gap-1 px-2 text-[11px]"
+          />
+        </>
       )}
     </div>
   );

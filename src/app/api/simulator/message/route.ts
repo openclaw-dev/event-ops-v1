@@ -242,6 +242,7 @@ export async function POST(request: Request) {
     snapshot,
     message,
     eventConfig,
+    operatorId: event.operator_id as string,
   });
 
   // ── 8. Persist the agent reply ───────────────────────────────────────────

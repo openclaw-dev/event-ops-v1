@@ -91,7 +91,7 @@ async function main() {
   // ── Load event + config ──
   const { data: event, error: eventError } = await supabase
     .from('events')
-    .select('id, name, config')
+    .select('id, name, config, operator_id')
     .eq('id', COASTLINE_EVENT_ID)
     .single();
 
@@ -151,7 +151,7 @@ async function main() {
 
     let result: AgentTurnResult;
     try {
-      result = await runAgent({ supabase, snapshot, message: m.text, eventConfig });
+      result = await runAgent({ supabase, snapshot, message: m.text, eventConfig, operatorId: event.operator_id as string });
     } catch (err) {
       console.log('ERROR');
       console.error(err);

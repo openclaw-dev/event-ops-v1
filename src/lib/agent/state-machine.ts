@@ -148,6 +148,7 @@ export interface RunAgentInput {
   snapshot: ConversationSnapshot;
   message: string;
   eventConfig: EventConfig;
+  operatorId: string;             // passed to retrieveKB for operator-level sections
 }
 
 function buildEscalation(
@@ -444,6 +445,7 @@ export async function runAgent(input: RunAgentInput): Promise<AgentTurnResult> {
       intent: 'ticket_delivery_issue',
       messageText: message,
       language: classification.language,
+      operatorId: input.operatorId,
     });
     if (kbSections.length === 0) {
       return {
@@ -500,6 +502,7 @@ export async function runAgent(input: RunAgentInput): Promise<AgentTurnResult> {
     intent: classification.intent,
     messageText: message,
     language: classification.language,
+    operatorId: input.operatorId,
   });
 
   // Decide which state this turn ends in.
@@ -541,6 +544,7 @@ async function handleRefundFlow({
       intent: null,
       messageText: 'refund policy alternative transfer credit exchange',
       language: classification.language,
+      operatorId: input.operatorId,
     });
     return generateWithGuardrails(
       input,
@@ -611,6 +615,7 @@ async function handleRefundFlow({
     intent: null, // fall back to keyword match on "refund"
     messageText: 'refund policy alternative transfer credit',
     language: classification.language,
+    operatorId: input.operatorId,
   });
 
   return generateWithGuardrails(

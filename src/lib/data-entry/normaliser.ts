@@ -14,10 +14,19 @@
  *   2. Else if row 1 has 3+ non-empty cells → horizontal
  *   3. Else (1–2 cells in row 1, no keyword) → vertical without header row
  *      (A1 is itself the first field name, not a meta-label)
+ *
+ * Cache behaviour:
+ *   When operatorId is supplied to normaliseSheet(), the function computes a
+ *   SHA-256 fingerprint of the sheet's field names (not values) and checks
+ *   mastersheet_mappings for a cached result that is less than 30 days old.
+ *   On a cache hit the Haiku call is skipped entirely. On a miss the result
+ *   is stored for future uploads.
  */
 
+import { createHash } from 'node:crypto';
 import * as XLSX from 'xlsx';
 import { claude } from '@/lib/agent/anthropic-client';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -38,6 +47,8 @@ export interface MappingResult {
   high_confidence_count: number;
   needs_review_count: number;
   raw_data: Record<string, unknown>[];
+  /** True when the mapping came from the mastersheet_mappings cache, not Haiku. */
+  from_cache?: boolean;
 }
 
 // ─── Valid EventSetupFormData keypaths ────────────────────────────────────────
@@ -306,14 +317,100 @@ function parseHaikuJson(raw: string): HaikuResponse {
   return JSON.parse(stripped) as HaikuResponse;
 }
 
+// ─── Cache helpers ────────────────────────────────────────────────────────────
+
+/** 30 days in milliseconds — mappings older than this are considered stale. */
+const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Builds a flat array of { sheet, field_name, value } from SheetSample[].
+ * Used as input to computeFormatFingerprint.
+ *   - vertical sheets: each kv_pair contributes its field_name
+ *   - horizontal sheets: each column header is the field_name
+ */
+function buildFingerprintInput(
+  samples: SheetSample[],
+): Array<{ sheet: string; field_name: string; value: string }> {
+  const result: Array<{ sheet: string; field_name: string; value: string }> = [];
+  for (const sample of samples) {
+    if (sample.format === 'vertical') {
+      for (const { field_name, value } of sample.kv_pairs) {
+        result.push({ sheet: sample.sheetName, field_name, value });
+      }
+    } else {
+      for (const col of sample.columns) {
+        result.push({ sheet: sample.sheetName, field_name: col, value: '' });
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Overlays current sample values onto cached mappings.
+ * Cached mappings may have stale sample_values from a previous upload;
+ * this refreshes them from the current extraction so the confirm screen
+ * shows values the operator actually recognises.
+ */
+function reconstructMappingsFromCache(
+  cached: FieldMapping[],
+  samples: SheetSample[],
+): FieldMapping[] {
+  const valueLookup: Record<string, string> = {};
+  for (const sample of samples) {
+    if (sample.format === 'vertical') {
+      for (const { field_name, value } of sample.kv_pairs) {
+        valueLookup[field_name] = value;
+      }
+    } else {
+      const firstRow = sample.rows[0] ?? {};
+      for (const col of sample.columns) {
+        valueLookup[col] = String(firstRow[col] ?? '');
+      }
+    }
+  }
+
+  return cached.map((m) => ({
+    ...m,
+    sample_value: valueLookup[m.source_column] ?? m.sample_value,
+  }));
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Parses an xlsx buffer, auto-detects sheet format (horizontal table or vertical
- * key-value), calls Claude Haiku to map columns/fields to EventSetupFormData
- * keypaths, and returns a MappingResult.
+ * Computes a stable fingerprint for a mastersheet format from its field names.
+ *
+ * Values are intentionally excluded — field names (column headers or KV keys)
+ * are stable across events that use the same template, while values change
+ * every event. This lets the cache survive re-uploads with different data.
+ *
+ * @param kv_pairs  Flat list of { sheet, field_name, value } from all sheets.
+ * @returns         SHA-256 hex string of the sorted, pipe-joined field names.
  */
-export async function normaliseSheet(buf: Buffer): Promise<MappingResult> {
+export function computeFormatFingerprint(
+  kv_pairs: Array<{ sheet: string; field_name: string; value: string }>,
+): string {
+  const fieldNames = kv_pairs.map((p) => p.field_name).sort();
+  const joined = fieldNames.join('|');
+  return createHash('sha256').update(joined).digest('hex');
+}
+
+/**
+ * Parses an xlsx buffer, auto-detects sheet format (horizontal table or vertical
+ * key-value), and maps columns/fields to EventSetupFormData keypaths.
+ *
+ * When operatorId is supplied:
+ *   1. Computes a SHA-256 fingerprint of the sheet's field names.
+ *   2. Checks mastersheet_mappings for a cached result < 30 days old.
+ *   3. If found: returns cached mappings immediately (from_cache: true),
+ *      skipping the Haiku call entirely.
+ *   4. If not found: calls Haiku, then stores the result for next time.
+ *
+ * @param buf         xlsx file buffer
+ * @param operatorId  optional — enables cache check/store when provided
+ */
+export async function normaliseSheet(buf: Buffer, operatorId?: string): Promise<MappingResult> {
   let samples: SheetSample[];
   let raw: Record<string, unknown>[];
 
@@ -343,6 +440,55 @@ export async function normaliseSheet(buf: Buffer): Promise<MappingResult> {
     };
   }
 
+  // ── Fingerprint — computed once, used for cache-check and cache-store ─────
+  const fingerprintInput = buildFingerprintInput(samples);
+  const fingerprint = operatorId ? computeFormatFingerprint(fingerprintInput) : undefined;
+
+  // ── Cache check ───────────────────────────────────────────────────────────
+  if (operatorId && fingerprint) {
+    try {
+      const admin = createAdminClient();
+      const { data: cached } = await admin
+        .from('mastersheet_mappings')
+        .select('source_columns, created_at')
+        .eq('operator_id', operatorId)
+        .eq('format_fingerprint', fingerprint)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (cached) {
+        const ageMs = Date.now() - new Date(cached.created_at as string).getTime();
+        if (ageMs < CACHE_TTL_MS) {
+          const cachedMappings = (cached.source_columns ?? []) as FieldMapping[];
+          const mappings = reconstructMappingsFromCache(cachedMappings, samples);
+          const high_confidence_count = mappings.filter((m) => !m.needs_review).length;
+          const needs_review_count = mappings.filter((m) => m.needs_review).length;
+
+          // Update last_used_at to track recency.
+          await admin
+            .from('mastersheet_mappings')
+            .update({ last_used_at: new Date().toISOString() })
+            .eq('operator_id', operatorId)
+            .eq('format_fingerprint', fingerprint);
+
+          return {
+            success: true,
+            mappings,
+            unmapped_columns: [],
+            high_confidence_count,
+            needs_review_count,
+            raw_data: raw,
+            from_cache: true,
+          };
+        }
+      }
+    } catch {
+      // Non-fatal: proceed to Haiku if cache is unavailable.
+    }
+  }
+
+  // ── Haiku inference ───────────────────────────────────────────────────────
   let haikuResponse: HaikuResponse;
   try {
     haikuResponse = await callHaikuForMappings(samples);
@@ -409,6 +555,35 @@ export async function normaliseSheet(buf: Buffer): Promise<MappingResult> {
 
   const high_confidence_count = mappings.filter((m) => !m.needs_review).length;
   const needs_review_count = mappings.filter((m) => m.needs_review).length;
+
+  // ── Store result in cache ─────────────────────────────────────────────────
+  if (operatorId && fingerprint) {
+    try {
+      const admin = createAdminClient();
+      const fieldMap: Record<string, string> = {};
+      const confidenceScores: Record<string, number> = {};
+      for (const m of mappings) {
+        fieldMap[m.source_column] = m.target_field;
+        confidenceScores[m.source_column] = m.confidence;
+      }
+
+      await admin.from('mastersheet_mappings').upsert(
+        {
+          operator_id: operatorId,
+          mapping_name: fingerprint,
+          format_fingerprint: fingerprint,
+          source_columns: mappings,       // full FieldMapping[] for cache reconstruction
+          field_map: fieldMap,            // kept for backward-compat with upload route step 6
+          confidence_scores: confidenceScores,
+          last_used_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'operator_id,mapping_name' },
+      );
+    } catch {
+      // Non-fatal: proceed without caching.
+    }
+  }
 
   return {
     success: true,

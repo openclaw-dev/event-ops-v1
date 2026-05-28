@@ -7,7 +7,10 @@
  *
  * Multipart form fields:
  *   mastersheet  — xlsx file, max 5 MB
- *   event_id     — UUID of the target event (used to scope the operator check)
+ *   event_id     — UUID of the target event (optional)
+ *                  • Present  → RLS event check; operator resolved via event.
+ *                  • Absent   → operator resolved from authenticated user session.
+ *                    mastersheet_mappings lookup still runs (non-fatal).
  *
  * Authorization: Supabase session cookie (RLS-enforced reads).
  */
@@ -16,6 +19,7 @@ import { NextResponse } from 'next/server';
 
 import { createServerClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { resolveActiveOperatorId } from '@/lib/get-active-operator';
 import { normaliseSheet } from '@/lib/data-entry/normaliser';
 import type { MappingResult, FieldMapping } from '@/lib/data-entry/normaliser';
 
@@ -34,13 +38,11 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const file = formData.get('mastersheet');
-  const eventId = formData.get('event_id');
+  const eventIdRaw = formData.get('event_id');
+  const eventId = typeof eventIdRaw === 'string' && eventIdRaw ? eventIdRaw : null;
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: 'No file provided. Use the "mastersheet" field.' }, { status: 400 });
-  }
-  if (typeof eventId !== 'string' || !eventId) {
-    return NextResponse.json({ error: 'event_id is required.' }, { status: 400 });
   }
 
   // ── 2. Validate file ─────────────────────────────────────────────────────
@@ -75,35 +77,55 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
   }
 
-  // RLS check: confirm the user can access this event.
-  const { data: event, error: eventError } = await supabase
-    .from('events')
-    .select('id, operator_id')
-    .eq('id', eventId)
-    .is('deleted_at', null)
-    .single();
+  // ── 4. Resolve operator (two paths: event-scoped vs session-scoped) ───────
+  let resolvedOperatorId: string | undefined;
 
-  if (eventError || !event) {
-    return NextResponse.json({ error: 'Event not found or access denied.' }, { status: 404 });
+  if (eventId) {
+    // Path A: eventId provided — RLS check confirms user can access this event.
+    const { data: event, error: eventError } = await supabase
+      .from('events')
+      .select('id, operator_id')
+      .eq('id', eventId)
+      .is('deleted_at', null)
+      .single();
+
+    if (eventError || !event) {
+      return NextResponse.json({ error: 'Event not found or access denied.' }, { status: 404 });
+    }
+
+    const { data: operatorUser } = await supabase
+      .from('operator_users')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('operator_id', event.operator_id)
+      .single();
+
+    if (!operatorUser) {
+      return NextResponse.json({ error: 'No operator membership found.' }, { status: 403 });
+    }
+
+    resolvedOperatorId = event.operator_id as string;
+  } else {
+    // Path B: no eventId — resolve operator from the active session cookie.
+    const { data: memberships } = await supabase
+      .from('operator_users')
+      .select('operator_id')
+      .eq('user_id', user.id);
+
+    resolvedOperatorId = resolveActiveOperatorId(
+      (memberships ?? []).map((m) => m.operator_id as string),
+    );
+
+    if (!resolvedOperatorId) {
+      return NextResponse.json({ error: 'No operator found. Complete onboarding first.' }, { status: 403 });
+    }
   }
 
-  // Resolve the operator_users row.
-  const { data: operatorUser } = await supabase
-    .from('operator_users')
-    .select('id')
-    .eq('user_id', user.id)
-    .eq('operator_id', event.operator_id)
-    .single();
-
-  if (!operatorUser) {
-    return NextResponse.json({ error: 'No operator membership found.' }, { status: 403 });
-  }
-
-  // ── 4. Run normaliser ────────────────────────────────────────────────────
+  // ── 5. Run normaliser (with fingerprint-based cache when operatorId known) ─
   let result: MappingResult;
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
-    result = await normaliseSheet(buffer);
+    result = await normaliseSheet(buffer, resolvedOperatorId);
   } catch (err) {
     return NextResponse.json(
       { error: `Normalisation failed: ${err instanceof Error ? err.message : String(err)}` },
@@ -111,13 +133,13 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
-  // ── 5. Merge saved confidence scores from mastersheet_mappings ───────────
+  // ── 6. Merge saved confidence scores from mastersheet_mappings ───────────
   try {
     const admin = createAdminClient();
     const { data: savedMapping } = await admin
       .from('mastersheet_mappings')
       .select('confidence_scores, field_map')
-      .eq('operator_id', event.operator_id)
+      .eq('operator_id', resolvedOperatorId)
       .order('last_used_at', { ascending: false })
       .limit(1)
       .single();
@@ -131,7 +153,6 @@ export async function POST(request: Request): Promise<NextResponse> {
         const savedTarget = savedFieldMap[m.source_column];
 
         if (savedConfidence !== undefined && savedTarget) {
-          // Boost confidence for columns we've seen before.
           const mergedConfidence = Math.max(m.confidence, savedConfidence);
           return {
             ...m,
@@ -143,7 +164,6 @@ export async function POST(request: Request): Promise<NextResponse> {
         return m;
       });
 
-      // Recompute aggregate counts.
       result.high_confidence_count = result.mappings.filter((m) => !m.needs_review).length;
       result.needs_review_count = result.mappings.filter((m) => m.needs_review).length;
     }

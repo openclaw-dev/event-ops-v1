@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { createServerClient } from '@/lib/supabase/server';
 import { updateEvent } from './actions';
 import { EventSetupForm } from '../../_components/event-setup-form';
+import { PublishButton } from './_components/publish-button';
 import { type EventSetupFormData } from '@/lib/schemas';
 import { type EventConfig } from '@/lib/types';
 
@@ -27,7 +28,7 @@ export default async function SetupPage({ params }: SetupPageProps) {
   const { data: event } = await supabase
     .from('events')
     .select(
-      'id, name, slug, event_type, start_date, end_date, timezone, venue_name, venue_city, capacity, age_minimum, config',
+      'id, name, slug, event_type, start_date, end_date, timezone, venue_name, venue_city, capacity, age_minimum, config, status',
     )
     .eq('id', params.eventId)
     .is('deleted_at', null)
@@ -94,13 +95,27 @@ export default async function SetupPage({ params }: SetupPageProps) {
     return updateEvent(params.eventId, data);
   }
 
+  const eventStatus = (event as Record<string, unknown>).status as string;
+
   return (
     <div className="mx-auto w-full max-w-3xl px-8 py-8">
-      <div className="mb-8">
-        <h1 className="text-xl font-semibold">Event Setup</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Changes are saved immediately. The agent runtime reads this config on every conversation.
-        </p>
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold">Event Setup</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Changes are saved immediately. The agent runtime reads this config on every conversation.
+          </p>
+        </div>
+
+        {/* Publish button — only shown when the event is not live */}
+        {eventStatus !== 'live' ? (
+          <PublishButton eventId={params.eventId} />
+        ) : (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+            Live
+          </span>
+        )}
       </div>
 
       <EventSetupForm

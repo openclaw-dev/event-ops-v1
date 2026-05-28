@@ -2,18 +2,23 @@
  * KB retrieval for the agent runtime.
  *
  * Strategy:
- *   1. Intent match — query kb_sections WHERE event_id = X AND intent = Y.
- *   2. FTS fallback — when intent match yields zero, fetch the event's KB and
- *      keyword-rank against the message text. Postgres `to_tsvector` exists as
- *      an expression index, but invoking it via PostgREST without a stored
- *      tsvector column doesn't hit the index. With ~65 sections per event,
- *      in-memory keyword ranking is fast enough and avoids an RPC.
+ *   1. Fetch event-specific sections (kb_sections WHERE event_id = X).
+ *   2. Fetch operator-level sections (operator_kb_sections WHERE operator_id = Y)
+ *      when operatorId is supplied — uses admin client to bypass RLS in the
+ *      agent runtime path where only the user-scoped client is available.
+ *   3. Merge: event sections take precedence over operator sections on
+ *      section_id conflict, so event-specific overrides always win.
+ *   4. Score the merged set: intent match (boost) + keyword overlap.
+ *   5. FTS fallback — when intent match yields zero from event rows, fall back
+ *      to intent-only on event rows (operator rows have no intent field).
  *
- * RLS applies to every read — pass a user-scoped Supabase client.
+ * RLS applies to the user-scoped event-KB read; admin client is used only for
+ * the operator-KB query where session context is absent.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { createAdminClient } from '@/lib/supabase/admin';
 import type { Language, RetrievedKBSection } from './types';
 
 const SELECT_COLUMNS =
@@ -108,15 +113,19 @@ export interface RetrievalOptions {
   language: Language;
   /** Cap on returned sections (default 3). */
   limit?: number;
+  /**
+   * Operator ID — when provided, also queries operator_kb_sections and merges
+   * results (event sections take precedence on section_id conflict).
+   */
+  operatorId?: string;
 }
 
 /**
  * Retrieve up to `limit` KB sections relevant to the message.
  *
- * Returns sections in descending relevance:
- *   - intent matches first (already filtered by classifier intent), ordered by
- *     keyword score against the message;
- *   - then FTS fallback if intent path yielded zero hits.
+ * Merges event-specific and operator-level KB sections, then ranks by
+ * keyword score + intent-match boost. Event sections override operator
+ * sections when the same section_id appears in both.
  */
 export async function retrieveKB(
   supabase: SupabaseClient,
@@ -126,21 +135,51 @@ export async function retrieveKB(
   const limit = opts.limit ?? 3;
   const tokens = tokenize(opts.messageText);
 
-  // Single-pass approach: pull the event's full KB (≤ a few hundred rows for v1),
-  // score every section against the message tokens, and apply an intent-match
-  // boost. Using intent as a hard filter caused parking-style queries to
-  // surface a narrow intent's wrong-but-keyword-overlapping section
-  // (e.g. venue_location.venue.location matches "venue" but doesn't answer
-  // "parking"). Boosting instead of filtering lets the keyword-match override
-  // when it's clearly stronger.
-  const { data: all } = await supabase
+  // ── 1. Fetch event-specific KB sections ───────────────────────────────────
+  const { data: eventData } = await supabase
     .from('kb_sections')
     .select(SELECT_COLUMNS)
     .eq('event_id', eventId);
 
-  const rows = (all ?? []) as SelectedKBRow[];
+  const eventRows = (eventData ?? []) as SelectedKBRow[];
+
+  // ── 2. Fetch operator-level KB sections ───────────────────────────────────
+  let operatorRows: SelectedKBRow[] = [];
+  if (opts.operatorId) {
+    const admin = createAdminClient();
+    const { data: opData } = await admin
+      .from('operator_kb_sections')
+      .select('section_id, title, content')
+      .eq('operator_id', opts.operatorId);
+
+    // Map operator sections to the common SelectedKBRow shape.
+    // title → question_en (provides searchable context), content → answer_en.
+    operatorRows = ((opData ?? []) as Array<{ section_id: string; title: string; content: string }>)
+      .map((r) => ({
+        section_id: r.section_id,
+        category: null,
+        intent: null,
+        escalation_needed: false,
+        question_en: r.title,
+        answer_en: r.content,
+        question_ar: null,
+        answer_ar: null,
+      }));
+  }
+
+  // ── 3. Merge: event sections override operator sections on section_id conflict ──
+  const merged = new Map<string, SelectedKBRow>();
+  for (const row of operatorRows) {
+    merged.set(row.section_id, row);
+  }
+  for (const row of eventRows) {
+    merged.set(row.section_id, row);
+  }
+
+  const rows = Array.from(merged.values());
   if (rows.length === 0) return [];
 
+  // ── 4. Score merged rows ──────────────────────────────────────────────────
   const INTENT_BOOST = 3;
   const scored = rows
     .map((r) => {
@@ -156,10 +195,13 @@ export async function retrieveKB(
       rowToSection(row, matchedIntent ? 'intent_match' : 'fts_fallback'),
     );
 
-  // No keyword overlap at all → fall back to intent-only matches so the
-  // generator at least sees the right-category content.
+  // ── 5. Fallback: intent-only from event rows ──────────────────────────────
+  // No keyword overlap at all → fall back to intent-only matches on event rows
+  // so the generator at least sees the right-category content.
+  // Operator rows are excluded from the intent fallback because they have
+  // no intent field and would never match.
   if (scored.length === 0 && opts.intent) {
-    const intentRows = rows.filter((r) => r.intent === opts.intent).slice(0, limit);
+    const intentRows = eventRows.filter((r) => r.intent === opts.intent).slice(0, limit);
     return intentRows.map((r) => rowToSection(r, 'intent_match'));
   }
 

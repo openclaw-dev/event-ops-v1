@@ -5,11 +5,15 @@
  *         360dialog does not use this endpoint.
  * POST — Inbound message receiver for both Meta and 360dialog.
  *         Always returns HTTP 200 — WhatsApp retries on any non-200 response.
+ *
+ * Two parallel flows for text messages:
+ *   1. Promoter (known phone) → data-entry / change-confirmation flow (unchanged)
+ *   2. Customer (unknown phone) → customer-support agent flow
  */
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createWhatsAppAdapter } from '@/lib/whatsapp/adapter-factory';
-import type { InboundMessage, WhatsAppAdapter } from '@/lib/whatsapp/types';
+import type { InboundMessage, InboundTextMessage, WhatsAppAdapter } from '@/lib/whatsapp/types';
 import { extractChanges } from '@/lib/data-entry/whatsapp-change-extractor';
 import { generateDiff, formatFieldLabel, formatValue } from '@/lib/data-entry/whatsapp-change-diff';
 import {
@@ -21,6 +25,19 @@ import {
   cancelPendingChange,
   type PendingChange,
 } from '@/lib/data-entry/pending-changes';
+import { runAgent } from '@/lib/agent/state-machine';
+import type { ConversationSnapshot, Language, OrderContext } from '@/lib/agent/types';
+import type { EventConfig } from '@/lib/types';
+import {
+  getOperatorByPhoneNumberId,
+  resolveEventForOperator,
+} from '@/lib/agent/whatsapp-router';
+import { getOrCreateWhatsAppConversation } from '@/lib/agent/whatsapp-conversation';
+import {
+  getPendingEventSelection,
+  setPendingEventSelection,
+  clearPendingEventSelection,
+} from '@/lib/agent/whatsapp-session-state';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -43,6 +60,275 @@ export async function GET(req: Request): Promise<Response> {
   return new Response('forbidden', { status: 403 });
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const VALID_LANGUAGES = new Set<Language>(['en', 'ar', 'ru', 'mixed']);
+
+function coerceLanguage(v: unknown): Language {
+  return typeof v === 'string' && VALID_LANGUAGES.has(v as Language)
+    ? (v as Language)
+    : 'en';
+}
+
+interface OrderRow {
+  id: string;
+  order_id: string;
+  customer_phone_e164: string;
+  customer_name: string | null;
+  ticket_type: string | null;
+  quantity: number;
+  amount_paid: number | string | null;
+  currency: string;
+  status: OrderContext['status'];
+  vip_flag: boolean;
+  transfer_eligible: boolean;
+}
+
+function rowToOrderContext(row: OrderRow): OrderContext {
+  return {
+    id: row.id,
+    order_id: row.order_id,
+    customer_phone_e164: row.customer_phone_e164,
+    customer_name: row.customer_name,
+    ticket_type: row.ticket_type,
+    quantity: row.quantity,
+    amount_paid:
+      row.amount_paid == null
+        ? null
+        : typeof row.amount_paid === 'string'
+        ? parseFloat(row.amount_paid)
+        : row.amount_paid,
+    currency: row.currency,
+    status: row.status,
+    vip_flag: row.vip_flag,
+    transfer_eligible: row.transfer_eligible,
+  };
+}
+
+function buildEventSelectionPrompt(
+  events: Array<{ id: string; name: string }>,
+): string {
+  const lines = events.map((e, i) => `${i + 1}. ${e.name}`).join('\n');
+  return `Which event are you asking about?\n\n${lines}`;
+}
+
+// ─── Customer support flow ────────────────────────────────────────────────────
+
+async function handleCustomerSupportMessage(
+  message: InboundTextMessage,
+  adapter: WhatsAppAdapter,
+): Promise<void> {
+  const phone = message.from_phone_e164;
+  const admin = createAdminClient();
+
+  // Step 1: Identify operator via the configured phone number.
+  const operator = await getOperatorByPhoneNumberId(
+    process.env.META_PHONE_NUMBER_ID ?? '',
+  );
+  if (!operator) {
+    console.error(
+      '[whatsapp/inbound] No operator found for META_PHONE_NUMBER_ID:',
+      process.env.META_PHONE_NUMBER_ID,
+    );
+    return; // no reply — operator is not configured
+  }
+
+  // Step 2: Check for a pending event selection from a previous turn.
+  let resolvedEventId: string | null = null;
+  const pending = getPendingEventSelection(phone);
+
+  if (pending) {
+    const num = parseInt(message.text.trim(), 10);
+    if (!isNaN(num) && num >= 1 && num <= pending.length) {
+      const chosen = pending[num - 1];
+      if (chosen) {
+        clearPendingEventSelection(phone);
+        resolvedEventId = chosen.id;
+      }
+    } else {
+      // Invalid selection — re-send the prompt.
+      await adapter.sendText({
+        to_phone_e164: phone,
+        text: buildEventSelectionPrompt(pending),
+      });
+      return;
+    }
+  }
+
+  // Step 3: Resolve event if not already set from pending selection.
+  if (!resolvedEventId) {
+    const routeResult = await resolveEventForOperator(operator.operator_id);
+
+    if (routeResult.type === 'none') {
+      await adapter.sendText({
+        to_phone_e164: phone,
+        text: 'There are no active events at the moment.',
+      });
+      return;
+    }
+
+    if (routeResult.type === 'multiple') {
+      setPendingEventSelection(phone, routeResult.events);
+      await adapter.sendText({
+        to_phone_e164: phone,
+        text: buildEventSelectionPrompt(routeResult.events),
+      });
+      return;
+    }
+
+    resolvedEventId = routeResult.event_id;
+  }
+
+  // Step 4: Get or create the customer conversation.
+  const conv = await getOrCreateWhatsAppConversation({
+    event_id: resolvedEventId,
+    operator_id: operator.operator_id,
+    phone_e164: phone,
+    wa_message_id: message.wamid,
+    language: 'en',
+  });
+
+  // Step 5: Fetch event config (needed by the state machine).
+  const { data: eventRow } = await admin
+    .from('events')
+    .select('config, operator_id')
+    .eq('id', resolvedEventId)
+    .single();
+
+  if (!eventRow) {
+    throw new Error(`Event ${resolvedEventId} not found`);
+  }
+
+  const eventConfig = (eventRow as Record<string, unknown>).config as EventConfig;
+
+  // Step 6: Hydrate matched order if conversation has one.
+  let matchedOrder: OrderContext | null = null;
+  if (conv.matched_order_id) {
+    const { data: orderRow } = await admin
+      .from('orders')
+      .select(
+        'id, order_id, customer_phone_e164, customer_name, ticket_type, quantity, amount_paid, currency, status, vip_flag, transfer_eligible',
+      )
+      .eq('id', conv.matched_order_id)
+      .single();
+    if (orderRow) matchedOrder = rowToOrderContext(orderRow as OrderRow);
+  }
+
+  // Build the conversation snapshot for the state machine.
+  const snapshot: ConversationSnapshot = {
+    conversation_id: conv.conversation_id,
+    event_id: resolvedEventId,
+    customer_phone_e164: phone,
+    state: conv.state,
+    matched_order: matchedOrder,
+    classified_reason: null,
+    alternative_offered: null,
+    language: conv.language,
+    refund_case_id: null,
+    message_history: [
+      ...conv.history,
+      {
+        role: 'user',
+        text: message.text,
+        created_at: new Date().toISOString(),
+      },
+    ],
+    consecutive_no_progress_turns: conv.consecutive_no_progress_turns,
+  };
+
+  // Step 6: Run the agent state machine.
+  // We pass the admin client as the supabase parameter — the state machine
+  // uses it for KB retrieval and order lookup, both of which work without RLS.
+  const result = await runAgent({
+    supabase: admin,
+    snapshot,
+    message: message.text,
+    eventConfig,
+    operatorId: operator.operator_id,
+  });
+
+  const newLanguage = result.classification
+    ? coerceLanguage(result.classification.language)
+    : conv.language;
+
+  // Step 7: Persist the user message then the agent reply.
+  await admin.from('messages').insert({
+    conversation_id: conv.conversation_id,
+    role: 'user',
+    text: message.text,
+  });
+
+  await admin.from('messages').insert({
+    conversation_id: conv.conversation_id,
+    role: 'agent',
+    text: result.reply_text,
+    classified_intent: result.classified_intent,
+    cited_section_ids:
+      result.cited_section_ids.length > 0 ? result.cited_section_ids : null,
+  });
+
+  // Update conversation state.
+  const nextNoProgress =
+    result.new_state === 'order_lookup'
+      ? conv.consecutive_no_progress_turns + 1
+      : 0;
+
+  await admin
+    .from('conversations')
+    .update({
+      state: result.new_state,
+      language: newLanguage,
+      matched_order_id: result.matched_order_id ?? conv.matched_order_id,
+      consecutive_no_progress_turns: nextNoProgress,
+      closed_at:
+        result.new_state === 'escalation_triggered' ||
+        result.new_state === 'session_closed'
+          ? new Date().toISOString()
+          : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', conv.conversation_id);
+
+  // Open an escalation row if the agent escalated.
+  if (result.escalation) {
+    await admin.from('escalations').insert({
+      conversation_id: conv.conversation_id,
+      event_id: resolvedEventId,
+      reason: result.escalation.reason,
+      priority: result.escalation.priority,
+      summary_for_ops: result.escalation.summary_for_ops,
+    });
+  }
+
+  // Audit log (non-fatal).
+  try {
+    await admin.from('audit_log').insert({
+      operator_id: operator.operator_id,
+      event_id: resolvedEventId,
+      actor_type: 'agent',
+      action: result.escalation ? 'agent.escalated' : 'agent.replied',
+      entity_type: 'conversation',
+      entity_id: conv.conversation_id,
+      metadata: {
+        channel: 'whatsapp',
+        classified_intent: result.classified_intent,
+        cited_section_ids: result.cited_section_ids,
+        escalation_reason: result.escalation?.reason ?? null,
+        new_state: result.new_state,
+        is_new_conversation: conv.is_new,
+      },
+    });
+  } catch (auditErr) {
+    console.warn('[whatsapp/inbound] audit log failed (non-fatal):', auditErr);
+  }
+
+  // Step 8: Send the reply.
+  await adapter.sendText({
+    to_phone_e164: phone,
+    text: result.reply_text,
+  });
+}
+
 // ─── Per-message handler ──────────────────────────────────────────────────────
 
 async function handleInboundMessage(
@@ -51,7 +337,7 @@ async function handleInboundMessage(
 ): Promise<void> {
   const admin = createAdminClient();
 
-  // ── Text messages: extract changes, create pending diff, send confirmation ─
+  // ── Text messages ─────────────────────────────────────────────────────────
   if (message.type === 'text') {
     // 1. Look up promoter by phone.
     const { data: promoterData } = await admin
@@ -61,112 +347,119 @@ async function handleInboundMessage(
       .eq('is_active', true)
       .maybeSingle();
 
-    if (!promoterData) {
-      await adapter.sendText({
-        to_phone_e164: message.from_phone_e164,
-        text: 'Sorry, your number is not authorised to send changes for this event.',
-      });
-      return;
-    }
+    // ── Promoter flow (completely unchanged) ────────────────────────────────
+    if (promoterData) {
+      const promoter = promoterData as {
+        id: string;
+        operator_id: string;
+        event_id: string | null;
+        preferred_language: string;
+      };
 
-    const promoter = promoterData as {
-      id: string;
-      operator_id: string;
-      event_id: string | null;
-      preferred_language: string;
-    };
-
-    if (!promoter.event_id) {
-      await adapter.sendText({
-        to_phone_e164: message.from_phone_e164,
-        text: 'Your account is not linked to an event. Contact the operator.',
-      });
-      return;
-    }
-
-    // 2. Fetch event row.
-    const { data: eventData } = await admin
-      .from('events')
-      .select('*')
-      .eq('id', promoter.event_id)
-      .single();
-
-    if (!eventData) {
-      await adapter.sendText({
-        to_phone_e164: message.from_phone_e164,
-        text: 'The linked event could not be found. Contact the operator.',
-      });
-      return;
-    }
-
-    const eventRow = eventData as Record<string, unknown>;
-
-    // 3. Extract structured changes via Haiku.
-    const language = promoter.preferred_language as 'en' | 'ar' | 'ru';
-    const extraction = await extractChanges(message.text, eventRow, language);
-
-    // 4. Generate diff against current event state.
-    const diff = generateDiff(extraction.changes, eventRow);
-
-    // 5. If nothing actionable, reply with a summary and stop.
-    if (diff.meaningful.length === 0) {
-      let replyText = 'No changes detected.';
-      if (extraction.ambiguous.length > 0) {
-        const ambigList = extraction.ambiguous
-          .map((a) => `"${a.raw_text}" (${a.reason})`)
-          .join('; ');
-        replyText = `Could not parse: ${ambigList}. Please resend with clearer wording.`;
+      if (!promoter.event_id) {
+        await adapter.sendText({
+          to_phone_e164: message.from_phone_e164,
+          text: 'Your account is not linked to an event. Contact the operator.',
+        });
+        return;
       }
-      await adapter.sendText({ to_phone_e164: message.from_phone_e164, text: replyText });
+
+      // Fetch event row.
+      const { data: eventData } = await admin
+        .from('events')
+        .select('*')
+        .eq('id', promoter.event_id)
+        .single();
+
+      if (!eventData) {
+        await adapter.sendText({
+          to_phone_e164: message.from_phone_e164,
+          text: 'The linked event could not be found. Contact the operator.',
+        });
+        return;
+      }
+
+      const eventRow = eventData as Record<string, unknown>;
+
+      // Extract structured changes via Haiku.
+      const language = promoter.preferred_language as 'en' | 'ar' | 'ru';
+      const extraction = await extractChanges(message.text, eventRow, language);
+
+      // Generate diff against current event state.
+      const diff = generateDiff(extraction.changes, eventRow);
+
+      // If nothing actionable, reply with a summary and stop.
+      if (diff.meaningful.length === 0) {
+        let replyText = 'No changes detected.';
+        if (extraction.ambiguous.length > 0) {
+          const ambigList = extraction.ambiguous
+            .map((a) => `"${a.raw_text}" (${a.reason})`)
+            .join('; ');
+          replyText = `Could not parse: ${ambigList}. Please resend with clearer wording.`;
+        }
+        await adapter.sendText({ to_phone_e164: message.from_phone_e164, text: replyText });
+        return;
+      }
+
+      // Persist the pending change (supersedes any prior open row).
+      const pendingChange = await createPendingChange({
+        operator_id: promoter.operator_id,
+        event_id: promoter.event_id,
+        promoter_id: promoter.id,
+        inbound_wamid: message.wamid,
+        inbound_text: message.text,
+        extraction,
+        diff,
+      });
+
+      // Build confirmation interactive message body.
+      const changeLines = diff.meaningful
+        .map(
+          (item) =>
+            `- ${formatFieldLabel(item.field)}: ${formatValue(item.field, item.current_value)} → ${formatValue(item.field, item.coerced_value)}`,
+        )
+        .join('\n');
+
+      const ambigBlock =
+        extraction.ambiguous.length > 0
+          ? `\n⚠️ Could not parse: ${extraction.ambiguous.map((a) => a.raw_text).join(', ')}`
+          : '';
+
+      const eventName = String(eventRow.name ?? 'your event');
+      const bodyText =
+        `Here's what I'll update for ${eventName}:\n\n${changeLines}${ambigBlock}\n\nReply to confirm or cancel.`;
+
+      // Send interactive message with Confirm / Cancel buttons.
+      const sendResult = await adapter.sendInteractive({
+        to_phone_e164: message.from_phone_e164,
+        body_text: bodyText,
+        buttons: [
+          { id: `confirm_pc_${pendingChange.id}`, title: 'Confirm' },
+          { id: `cancel_pc_${pendingChange.id}`, title: 'Cancel' },
+        ],
+      });
+
+      // Record send outcome on the pending_changes row.
+      if (sendResult.success && sendResult.wamid) {
+        await updateConfirmationWamid(pendingChange.id, sendResult.wamid);
+      } else {
+        await updateConfirmationSendError(
+          pendingChange.id,
+          sendResult.error ?? 'Unknown send error',
+        );
+      }
       return;
     }
 
-    // 6. Persist the pending change (supersedes any prior open row).
-    const pendingChange = await createPendingChange({
-      operator_id: promoter.operator_id,
-      event_id: promoter.event_id,
-      promoter_id: promoter.id,
-      inbound_wamid: message.wamid,
-      inbound_text: message.text,
-      extraction,
-      diff,
-    });
-
-    // 7. Build confirmation interactive message body.
-    const changeLines = diff.meaningful
-      .map(
-        (item) =>
-          `- ${formatFieldLabel(item.field)}: ${formatValue(item.field, item.current_value)} → ${formatValue(item.field, item.coerced_value)}`,
-      )
-      .join('\n');
-
-    const ambigBlock =
-      extraction.ambiguous.length > 0
-        ? `\n⚠️ Could not parse: ${extraction.ambiguous.map((a) => a.raw_text).join(', ')}`
-        : '';
-
-    const eventName = String(eventRow.name ?? 'your event');
-    const bodyText =
-      `Here's what I'll update for ${eventName}:\n\n${changeLines}${ambigBlock}\n\nReply to confirm or cancel.`;
-
-    // 8. Send interactive message with Confirm / Cancel buttons.
-    const sendResult = await adapter.sendInteractive({
-      to_phone_e164: message.from_phone_e164,
-      body_text: bodyText,
-      buttons: [
-        { id: `confirm_pc_${pendingChange.id}`, title: 'Confirm' },
-        { id: `cancel_pc_${pendingChange.id}`, title: 'Cancel' },
-      ],
-    });
-
-    // 9. Record send outcome on the pending_changes row.
-    if (sendResult.success && sendResult.wamid) {
-      await updateConfirmationWamid(pendingChange.id, sendResult.wamid);
-    } else {
-      await updateConfirmationSendError(
-        pendingChange.id,
-        sendResult.error ?? 'Unknown send error',
-      );
+    // ── Customer support flow ────────────────────────────────────────────────
+    try {
+      await handleCustomerSupportMessage(message, adapter);
+    } catch (err) {
+      console.error('[whatsapp/inbound] customer support error:', err);
+      await adapter.sendText({
+        to_phone_e164: message.from_phone_e164,
+        text: 'Sorry, something went wrong. Please try again.',
+      });
     }
     return;
   }
@@ -203,7 +496,6 @@ async function handleInboundMessage(
       });
 
       if (result.status === 'confirmed') {
-        // Fetch event name for the confirmation reply.
         const { data: eventData } = await admin
           .from('events')
           .select('name')
@@ -230,7 +522,6 @@ async function handleInboundMessage(
           text: 'This change request has expired. Please resend.',
         });
       }
-      // 'not_found': ignore silently
       return;
     }
 
@@ -263,10 +554,8 @@ async function handleInboundMessage(
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    // Read raw body as text first (needed for signature verification).
     const rawBody = await req.text();
 
-    // Parse JSON — malformed bodies are ignored, not rejected.
     let body: unknown;
     try {
       body = JSON.parse(rawBody);
@@ -274,7 +563,6 @@ export async function POST(req: Request): Promise<Response> {
       return Response.json({ status: 'ignored' }, { status: 200 });
     }
 
-    // Instantiate the correct adapter — throws if WHATSAPP_PROVIDER is unset.
     let adapter: ReturnType<typeof createWhatsAppAdapter>;
     try {
       adapter = createWhatsAppAdapter();
@@ -283,17 +571,14 @@ export async function POST(req: Request): Promise<Response> {
       return Response.json({ status: 'ignored' }, { status: 200 });
     }
 
-    // Verify signature — invalid or missing sigs are silently ignored (never 4xx).
     try {
       adapter.verifySignature(rawBody, Object.fromEntries(req.headers));
     } catch {
       return Response.json({ status: 'ignored' }, { status: 200 });
     }
 
-    // Parse inbound messages from the normalised payload.
     const messages: InboundMessage[] = adapter.parseInbound(body);
 
-    // Process each message independently — one failure must not block others.
     for (const message of messages) {
       try {
         await handleInboundMessage(message, adapter);
@@ -308,7 +593,6 @@ export async function POST(req: Request): Promise<Response> {
 
     return Response.json({ status: 'ok', count: messages.length }, { status: 200 });
   } catch (err) {
-    // Top-level safety net — log and return 200 so WhatsApp doesn't retry.
     console.error('[whatsapp/inbound] unhandled error:', err);
     return Response.json({ status: 'ignored' }, { status: 200 });
   }

@@ -2,21 +2,20 @@
 
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Upload, File, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Upload, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
 interface UploadResult {
-  document_id: string;
   sections_parsed: number;
   errors: string[];
 }
 
-interface KbUploadFormProps {
-  eventId: string;
+interface OperatorKbUploadFormProps {
+  operatorId: string;
 }
 
-export function KbUploadForm({ eventId }: KbUploadFormProps) {
+export function OperatorKbUploadForm({ operatorId }: OperatorKbUploadFormProps) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -32,17 +31,17 @@ export function KbUploadForm({ eventId }: KbUploadFormProps) {
 
     const form = new FormData();
     form.append('file', file);
-    form.append('event_id', eventId);
+    form.append('operator_id', operatorId);
 
     try {
-      const res = await fetch('/api/kb/upload', { method: 'POST', body: form });
+      const res = await fetch('/api/operator-kb/upload', { method: 'POST', body: form });
       const data = (await res.json()) as UploadResult & { error?: string };
 
       if (!res.ok) {
         setError(data.error ?? `Upload failed (${res.status}).`);
       } else {
         setResult(data);
-        router.refresh(); // re-fetch server component data
+        router.refresh();
       }
     } catch {
       setError('Network error — please try again.');
@@ -55,11 +54,11 @@ export function KbUploadForm({ eventId }: KbUploadFormProps) {
     if (!files || files.length === 0) return;
     const file = files[0];
     const ext = file.name.split('.').pop()?.toLowerCase();
-    if (ext !== 'md' && ext !== 'markdown' && ext !== 'json' && ext !== 'xlsx' && ext !== 'docx') {
-      setError('Only .md, .json, .xlsx, and .docx files are supported.');
+    if (ext !== 'md' && ext !== 'markdown' && ext !== 'json') {
+      setError('Only .md and .json files are supported.');
       return;
     }
-    upload(file);
+    void upload(file);
   }
 
   return (
@@ -68,7 +67,7 @@ export function KbUploadForm({ eventId }: KbUploadFormProps) {
       <div
         role="button"
         tabIndex={0}
-        aria-label="Upload KB document"
+        aria-label="Upload operator KB document"
         className={cn(
           'flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors',
           dragging
@@ -78,8 +77,14 @@ export function KbUploadForm({ eventId }: KbUploadFormProps) {
         )}
         onClick={() => inputRef.current?.click()}
         onKeyDown={(e) => e.key === 'Enter' && inputRef.current?.click()}
-        onDragEnter={(e) => { e.preventDefault(); setDragging(true); }}
-        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => {
           e.preventDefault();
@@ -89,15 +94,13 @@ export function KbUploadForm({ eventId }: KbUploadFormProps) {
       >
         <Upload className="mb-2 h-8 w-8 text-muted-foreground/60" />
         <p className="text-sm font-medium">
-          {uploading ? 'Uploading…' : 'Drop a file here, or click to browse'}
+          {uploading ? 'Uploading…' : 'Drop .md or .json here, or click to browse'}
         </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Supported formats: Markdown (.md), JSON (.json), Excel (.xlsx), Word (.docx) — Max 5 MB
-        </p>
+        <p className="mt-1 text-xs text-muted-foreground">Max 5 MB</p>
         <input
           ref={inputRef}
           type="file"
-          accept=".md,.markdown,.json,.xlsx,.docx"
+          accept=".md,.markdown,.json"
           className="hidden"
           onChange={(e) => handleFiles(e.target.files)}
         />
@@ -135,32 +138,6 @@ export function KbUploadForm({ eventId }: KbUploadFormProps) {
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-/** Small pill showing a document row from kb_documents. */
-export function KbDocumentRow({
-  filename,
-  sectionCount,
-  uploadedAt,
-}: {
-  filename: string;
-  sectionCount: number;
-  uploadedAt: string;
-}) {
-  const time = new Date(uploadedAt).toLocaleTimeString('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-  return (
-    <div className="flex items-center gap-3 rounded-md border bg-card px-3 py-2 text-sm">
-      <File className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span className="flex-1 font-medium">{filename}</span>
-      <span className="text-xs text-muted-foreground">
-        {sectionCount} section{sectionCount !== 1 ? 's' : ''}
-      </span>
-      <span className="text-xs text-muted-foreground">uploaded {time}</span>
     </div>
   );
 }

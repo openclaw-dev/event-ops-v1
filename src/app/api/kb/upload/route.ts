@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { parseMarkdown } from '@/lib/parsers/kb-markdown';
 import { parseJson } from '@/lib/parsers/kb-json';
+import { xlsxToMarkdown, docxToMarkdown } from '@/lib/kb/converters';
 
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 const BUCKET = 'kb';
@@ -14,12 +15,14 @@ const PAGE_SIZE = 500; // max sections per upsert batch
 export const maxDuration = 60;
 export const runtime = 'nodejs';
 
-type Format = 'markdown' | 'json';
+type Format = 'markdown' | 'json' | 'xlsx' | 'docx';
 
 function detectFormat(filename: string): Format | null {
   const ext = filename.split('.').pop()?.toLowerCase();
   if (ext === 'md' || ext === 'markdown') return 'markdown';
   if (ext === 'json') return 'json';
+  if (ext === 'xlsx') return 'xlsx';
+  if (ext === 'docx') return 'docx';
   return null;
 }
 
@@ -67,7 +70,7 @@ export async function POST(request: Request) {
   const format = detectFormat(file.name);
   if (!format) {
     return NextResponse.json(
-      { error: 'Unsupported file type. Upload a .md or .json file.' },
+      { error: 'Unsupported file type. Upload a .md, .json, .xlsx, or .docx file.' },
       { status: 415 },
     );
   }
@@ -153,10 +156,29 @@ export async function POST(request: Request) {
   }
 
   // ── 6. Parse content ─────────────────────────────────────────────────────
-  const text = new TextDecoder().decode(fileBuffer);
-  const { sections, errors: parseErrors } = format === 'markdown'
-    ? parseMarkdown(text)
-    : parseJson(text);
+  let markdownText: string;
+  if (format === 'xlsx') {
+    try {
+      markdownText = await xlsxToMarkdown(fileBuffer);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return NextResponse.json({ error: `Could not parse file: ${msg}` }, { status: 422 });
+    }
+  } else if (format === 'docx') {
+    try {
+      markdownText = await docxToMarkdown(fileBuffer);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return NextResponse.json({ error: `Could not parse file: ${msg}` }, { status: 422 });
+    }
+  } else {
+    markdownText = new TextDecoder().decode(fileBuffer);
+  }
+
+  const { sections, errors: parseErrors } =
+    format === 'json'
+      ? parseJson(markdownText)
+      : parseMarkdown(markdownText);
 
   // ── 7. Upsert sections into kb_sections ──────────────────────────────────
   let sectionsParsed = 0;

@@ -298,9 +298,15 @@ export function UploadTab({ eventId }: UploadTabProps) {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium">
+              <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
                 {mappingResult.mappings.length} column
                 {mappingResult.mappings.length !== 1 ? 's' : ''} mapped
+                {mappingResult.from_cache && (
+                  <span className="inline-flex items-center gap-1 text-xs font-normal text-emerald-600">
+                    <CheckCircle2 className="h-3 w-3" />
+                    Cached format — no AI inference needed
+                  </span>
+                )}
               </p>
               <p className="text-xs text-muted-foreground">
                 {mappingResult.high_confidence_count} high-confidence ·{' '}

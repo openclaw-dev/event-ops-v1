@@ -13,6 +13,8 @@ import {
   ChevronRight,
   RefreshCw,
   Users,
+  BookOpen,
+  MessageCircle,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -38,6 +40,11 @@ interface SidebarProps {
   currentOperator: Operator;
   events: Event[];
 }
+
+const SETTINGS_SUB_NAV = [
+  { label: 'Knowledge Base', href: '/admin/settings/kb', icon: BookOpen },
+  { label: 'WhatsApp', href: '/admin/settings/whatsapp', icon: MessageCircle },
+] as const;
 
 const EVENT_SUB_NAV = [
   { label: 'Setup', segment: 'setup', icon: Settings, wip: false },
@@ -164,7 +171,7 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
           size="sm"
           className={cn(
             'w-full justify-start gap-2 text-muted-foreground hover:text-foreground',
-            pathname === '/admin/settings' && 'bg-accent text-accent-foreground',
+            pathname.startsWith('/admin/settings') && 'bg-accent text-accent-foreground',
           )}
           asChild
         >
@@ -173,6 +180,31 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
             Settings
           </Link>
         </Button>
+
+        {/* Settings sub-nav — shown when any /admin/settings route is active */}
+        {pathname.startsWith('/admin/settings') && (
+          <div className="ml-4 mt-0.5 space-y-0.5 border-l pl-2.5">
+            {SETTINGS_SUB_NAV.map(({ label, href, icon: Icon }) => {
+              const isSubActive = pathname === href || pathname.startsWith(`${href}/`);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className={cn(
+                    'flex items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors',
+                    isSubActive
+                      ? 'bg-primary/10 font-medium text-primary'
+                      : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+                  )}
+                >
+                  <Icon className="h-3 w-3 shrink-0" />
+                  <span>{label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+
         <SignOutButton />
       </div>
     </aside>
