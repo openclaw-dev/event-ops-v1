@@ -2,7 +2,7 @@
 
 ## Status
 
-**v1, v1.5, and v1.6 are complete and deployed.** Live at [tazkar.co](https://tazkar.co).
+**v1, v1.5, v1.6, and v1.7 are complete and deployed.** Live at [tazkar.co](https://tazkar.co).
 
 ## Stack
 
@@ -17,13 +17,14 @@
 
 ### AI models in use
 - **Classifier:** `claude-haiku-4-5` — intent + language detection, temp 0.2
-- **Generator:** `claude-sonnet-4-6` — reply generation, temp 0.3
-- **Field mapping inference:** `claude-haiku-4-5` — one-time per client mastersheet format
-- **Change extraction:** `claude-haiku-4-5` — temp 0, cached system prompt, allowlist-validated output
+- **Generator:** `claude-sonnet-4-6` — reply generation, temp 0.3, days-until-event context injected
+- **Field mapping inference:** `claude-haiku-4-5` — one-time per client format, cached via fingerprint
+- **Change extraction:** `claude-haiku-4-5` — temp 0, cached system prompt, allowlist-validated
+- **KB conversion:** `claude-haiku-4-5` — xlsx/docx normalisation, skipped if content already structured
 
 ### Supabase clients
-- `createServerClient()` — RLS-enforced, reads the user's session cookie (server components + route handlers)
-- `createAdminClient()` — service-role key, used for storage writes, audit_log inserts, change_events inserts, kb_sections updates, pending_changes writes that RLS blocks
+- `createServerClient()` — RLS-enforced, reads session cookie
+- `createAdminClient()` — service-role key, used for all writes that RLS blocks
 
 ## Deployment
 
@@ -50,139 +51,191 @@ META_WEBHOOK_VERIFY_TOKEN=
 DIALOG360_API_KEY=
 DIALOG360_WABA_ID=
 CRON_SECRET=
+RESEND_API_KEY=
 ```
-See `.env.example` for descriptions. DatoCMS and WhatsApp vars are present but empty — connectors skip gracefully when absent.
 
 ### vercel.json
-Contains framework detection override AND hourly cron:
+Contains framework detection override AND two crons:
 ```json
-{ "crons": [{ "path": "/api/cron/expire-pending", "schedule": "0 * * * *" }] }
+{
+  "crons": [
+    { "path": "/api/cron/expire-pending", "schedule": "0 0 * * *" },
+    { "path": "/api/cron/weekly-digest", "schedule": "0 9 * * 1" }
+  ]
+}
 ```
+Note: expire-pending runs daily at midnight (Hobby plan limit). weekly-digest runs every Monday at 9am UTC.
+
+### WhatsApp sandbox note
+Meta temporary access token expires every 24 hours. After regenerating:
+1. Update META_PERMANENT_TOKEN in Vercel env vars
+2. Run `vercel deploy --prod`
+3. Re-run WABA subscription: `curl -X POST "https://graph.facebook.com/v21.0/2311051229700014/subscribed_apps" -H "Authorization: Bearer YOUR_NEW_TOKEN"`
 
 ## Known Issues
 
 ### Vercel Hobby plan blocks Co-Authored-By commits
-Vercel Hobby rejects pushes that include `Co-Authored-By: Claude` in commit messages.
-**Workaround:** squash commits before pushing.
 ```bash
 git reset --soft HEAD~<n> && git commit -m "feat: description" && git push origin main --force
 ```
 
+### Vercel token expires frequently
+Run `vercel login` then `vercel deploy --prod` when token errors appear.
+
 ### Always run pnpm build before pushing
-`pnpm typecheck` passes but `next build` catches ESLint errors that typecheck misses. Vercel will reject the deployment otherwise. This has happened once already (unused prop in PendingTab). Run `pnpm build` locally before every push.
+`pnpm typecheck` passes but `next build` catches ESLint errors. Run `pnpm build` locally before every push.
+
+### supabase db push circuit breaker
+If Supabase CLI hits connection errors repeatedly, use the SQL Editor directly at:
+https://supabase.com/dashboard/project/gcuhmykneclcpczeoumm/sql/new
 
 ## Auth Flow
 
-Magic-link (OTP) login via Supabase Auth:
-
-1. `tazkar.co/login` — user submits email
-2. `emailRedirectTo` is derived from `window.location.origin` at runtime → `https://tazkar.co/auth/callback`
-3. Supabase sends magic link; user clicks it
-4. `src/app/auth/callback/route.ts` — PKCE code exchange → session cookie set → redirect to `/admin/events`
-5. If the link arrives on `www.tazkar.co`, the callback 301-redirects to `tazkar.co` first
-
-**Supabase redirect URL allowlist** must include:
-- `https://tazkar.co/auth/callback`
-- `https://www.tazkar.co/auth/callback`
+Magic-link (OTP) via Supabase Auth → `/auth/callback` → session cookie → `/admin/events`.
 
 ## Issues Shipped
 
 ### v1 (support agent)
-1. Project scaffold — Next.js 14, Supabase, Tailwind, shadcn/ui
-2. Auth — magic-link login, session middleware, `/auth/callback` route
+1. Project scaffold
+2. Auth — magic-link, session middleware
 3. Database schema — events, orders, conversations, messages, escalations, KB tables
-4. Order import — CSV upload, validation, batched upsert (`POST /api/orders/import`)
-5. KB upload — Markdown/JSON parser, section upsert (`POST /api/kb/upload`)
+4. Order import — CSV upload, batched upsert
+5. KB upload — Markdown/JSON parser
 6. Agent classifier — Haiku intent + language detection
 7. Agent state machine — greeting → FAQ → order lookup → refund deflection → escalation
-8. Agent runtime — full conversation loop wired to DB and Anthropic SDK
-9. Post-event PDF report — operator summary generated server-side
-10. Admin UI — Conversations and Escalations tabs, Simulator, Orders, KB management
+8. Agent runtime — full conversation loop
+9. Post-event PDF report
+10. Admin UI — Conversations, Escalations, Simulator, Orders, KB management
 
 ### v1.5 (data entry surface) — shipped 26 May 2026
 - `supabase/migrations/0013_data_entry.sql` — change_events and mastersheet_mappings tables
-- `src/lib/data-entry/normaliser.ts` — xlsx parser, vertical KV + horizontal format detection, Haiku field mapping
-- `src/lib/data-entry/change-events.ts` — recordChangeEvent() and propagateToKB() using admin client
-- `src/lib/data-entry/dato-connector.ts` — DatoCMS connector, skips gracefully if credentials absent
-- `src/app/api/data-entry/upload/route.ts` and `confirm/route.ts`
-- `src/app/admin/events/[eventId]/sync/` — Sync page with Upload, Pending, Change History tabs
-- `src/components/ui/tabs.tsx` — shadcn Tabs component added
+- `src/lib/data-entry/normaliser.ts` — xlsx parser, vertical KV + horizontal format detection
+- `src/lib/data-entry/change-events.ts` — recordChangeEvent() and propagateToKB()
+- `src/lib/data-entry/dato-connector.ts` — DatoCMS connector, graceful skip
+- Sync page — Upload, Pending, Change History tabs
 
 ### v1.6 (WhatsApp change management) — shipped 27 May 2026
 - `supabase/migrations/0014_whatsapp_change_mgmt.sql` — promoters and pending_changes tables
-- `src/lib/whatsapp/` — adapter interface, Meta and 360dialog implementations, shared parser
-- `src/app/api/whatsapp/inbound/route.ts` — inbound webhook, always returns 200
-- `src/lib/data-entry/whatsapp-change-extractor.ts` — Haiku extraction, allowlist-validated
-- `src/lib/data-entry/whatsapp-change-diff.ts` — pure diff generation, zod coercion per field
-- `src/lib/data-entry/pending-changes.ts` — full lifecycle: create, supersede, expire, cancel, confirm
-- `src/app/api/changes/` — confirm, cancel, pending GET routes
-- `src/app/api/cron/expire-pending/route.ts` — hourly cron
-- `src/app/admin/events/[eventId]/sync/_components/pending-tab.tsx` — pending confirmations UI
-- `src/app/admin/events/[eventId]/promoters/` — promoter management UI and API routes
-- `src/components/ui/switch.tsx` — shadcn Switch component added
+- `src/lib/whatsapp/` — Meta and 360dialog adapters, shared parser
+- Inbound webhook — always returns 200
+- Change extraction, diff generation, pending lifecycle
+- Promoter management UI and API routes
+- Hourly cron for expiring stale pending changes
+
+### v1.7 (product completeness) — shipped 28-29 May 2026
+- `supabase/migrations/0015_operator_kb.sql` — operator_kb_sections table (two-tier KB)
+- `supabase/migrations/0016_mastersheet_fingerprint.sql` — format_fingerprint + operator_id on mastersheet_mappings
+- `supabase/migrations/0017_conversation_whatsapp.sql` — channel, customer_phone, wa_message_id, operator_id on conversations
+- `supabase/migrations/0018_kb_language.sql` — language column on kb_sections and operator_kb_sections
+- `supabase/migrations/0019_demo_flag.sql` — is_demo column on events
+- `supabase/migrations/0020_messages_fts_index.sql` — GIN index on messages.content for full-text search
+- `supabase/migrations/0021_messages_source_section.sql` — source_section column on messages
+- `supabase/migrations/0022_usage_tracking.sql` — usage_events table for billing
+- Customer WhatsApp support agent — inbound routes to agent state machine for non-promoter senders
+- Event routing — auto-routes to single active event, prompts selection for multiple
+- Operator KB — two-tier KB, Settings → Knowledge Base page
+- Mastersheet on create — two-path New Event (form or mastersheet upload)
+- Excel/Word KB upload — xlsx/docx conversion via mammoth + Haiku normalisation
+- Mastersheet format cache — SHA-256 fingerprint, Haiku skipped on cache hit
+- Changed-by display name in Change History — promoter name + phone instead of UUID
+- Event readiness checklist — 9-item checklist, blocks publish if required items missing
+- Publish event button + End event button on Setup page
+- Event status badges — colored dots in sidebar and events list
+- Demo mode — one-click demo event creation with full seed data
+- Conversation metrics bar — total, resolved by AI, escalated, refunds deflected, SAR saved
+- Conversation search — full-text search, intent filter, date range, CSV export
+- Human reply from dashboard — operator replies to escalated WhatsApp conversations
+- Order lookup by name/phone/email — not just order ID
+- Greeting personalisation — agent uses customer first name from order
+- Agent quality — confidence threshold escalation, response length calibration, source citations
+- Days-until-event context — injected into generator system prompt
+- Escalation notification — WhatsApp message to escalation contacts
+- Multi-language KB — language field on sections, language-aware retrieval
+- Usage tracking — cost per API call, Usage & Billing page in Settings
+- Weekly digest email — Monday morning summary per operator (Resend or SendGrid)
+- KB gap report — coverage score, top escalated intents, Add to KB button
+- WhatsApp settings page — Phone Number ID, display number, test connection button
+- Operator-level KB — Settings → Knowledge Base for cross-event content
 
 ## Conventions
 
 - **Route handlers** export `export const maxDuration` and `export const runtime = 'nodejs'`
-- **Audit log** inserts always use `createAdminClient()` — RLS blocks user inserts
-- **Storage** uploads always use `createAdminClient()` — buckets are private
-- **change_events, pending_changes, kb_sections** writes always use `createAdminClient()`
-- **No hardcoded URLs** — origins always from `window.location.origin` (client) or `request.url` (server)
+- **All DB writes that RLS blocks** use `createAdminClient()` — change_events, pending_changes, kb_sections, operator_kb_sections, usage_events, audit_log, storage
+- **No hardcoded URLs** — origins from `window.location.origin` (client) or `request.url` (server)
 - TypeScript strict mode; `any` casts annotated with `// eslint-disable-next-line @typescript-eslint/no-explicit-any`
 - Package manager is **pnpm** — never use npm install
 - **Run `pnpm build` before every push** — not just `pnpm typecheck`
+- **Deploy via CLI** — `vercel deploy --prod` not git integration (Hobby plan git integration is unreliable)
 
 ## Schema facts (read before touching the database)
 
 - `events.name` — not name_en. Single language field.
-- `events.config JSONB` — stores ticket_tiers, refund_policy, doors_open_local, dress_code, parking_info, escalation_contacts, escalation_keywords, vip_orders_always_escalate as a nested blob
+- `events.config JSONB` — ticket_tiers, refund_policy, doors_open_local, dress_code, parking_info, escalation_contacts, escalation_keywords, vip_orders_always_escalate
 - `events.start_date` / `end_date` — DATE type
-- `kb_sections` — exists from v1. section_id unique per event. Do not recreate. propagateToKB updates rows here.
-- `change_events` — added in 0013. Every confirmed field change. Admin client only.
-- `mastersheet_mappings` — added in 0013. Stored field mapping per operator format.
-- `promoters` — added in 0014. Phone whitelist per operator/event for WhatsApp changes.
-- `pending_changes` — added in 0014. Full lifecycle for WhatsApp-inbound change diffs.
-- `EventSetupFormData` in `src/lib/schemas.ts` — canonical shape for event data.
-- `current_user_operator_ids()` — RLS helper, already exists, use in new migration policies.
+- `events.status` — 'draft' | 'live'. Publish button sets to 'live'. Customer WhatsApp routes only to 'live' events.
+- `events.is_demo` — boolean, marks demo events created via one-click seed
+- `kb_sections` — section_id unique per event. language column: 'en'|'ar'|'ru'|'all'
+- `operator_kb_sections` — same shape as kb_sections but scoped to operator_id. Two-tier KB.
+- `change_events` — every confirmed field change. channel: 'mastersheet'|'whatsapp'
+- `mastersheet_mappings` — format_fingerprint + operator_id for cache lookup
+- `promoters` — phone whitelist per operator/event
+- `pending_changes` — full lifecycle for WhatsApp-inbound change diffs
+- `conversations` — channel: 'simulator'|'whatsapp'|'email', customer_phone, wa_message_id, operator_id
+- `messages` — source_section TEXT (which KB section was cited)
+- `usage_events` — per-call API cost tracking, operator_id + event_id + model + tokens + cost_usd
+- `current_user_operator_ids()` — RLS helper, use in new migration policies
 
 ## Key file locations
 
 - Anthropic client: `src/lib/agent/anthropic-client.ts` — do not create a new client
-- Supabase server client: `src/lib/supabase/server.ts`
-- Supabase admin client: `src/lib/supabase/admin.ts`
-- Canonical types: `src/lib/agent/types.ts`
+- Supabase server: `src/lib/supabase/server.ts`
+- Supabase admin: `src/lib/supabase/admin.ts`
 - Canonical schemas: `src/lib/schemas.ts`
+- Canonical types: `src/lib/agent/types.ts`
 - Data entry normaliser: `src/lib/data-entry/normaliser.ts`
-- Data entry change events: `src/lib/data-entry/change-events.ts`
+- Change events: `src/lib/data-entry/change-events.ts`
 - DatoCMS connector: `src/lib/data-entry/dato-connector.ts`
 - WhatsApp adapter factory: `src/lib/whatsapp/adapter-factory.ts`
-- Pending changes lifecycle: `src/lib/data-entry/pending-changes.ts`
+- Pending changes: `src/lib/data-entry/pending-changes.ts`
 - Change extractor: `src/lib/data-entry/whatsapp-change-extractor.ts`
 - Diff generator: `src/lib/data-entry/whatsapp-change-diff.ts`
+- WhatsApp router: `src/lib/agent/whatsapp-router.ts`
+- WhatsApp conversation: `src/lib/agent/whatsapp-conversation.ts`
+- WhatsApp session state: `src/lib/agent/whatsapp-session-state.ts`
+- Conversation metrics: `src/lib/agent/conversation-metrics.ts`
+- Event readiness: `src/lib/agent/event-readiness.ts`
+- Escalation notifier: `src/lib/agent/escalation-notifier.ts`
+- KB converters (xlsx/docx): `src/lib/kb/converters.ts`
+- KB gap analysis: `src/lib/kb/gap-analysis.ts`
+- Usage tracking: `src/lib/billing/track-usage.ts`
+- Email send: `src/lib/email/send.ts`
+- Weekly digest: `src/lib/email/weekly-digest.ts`
+- Demo seed: `src/lib/demo/seed-demo-event.ts`
 
 ## Patterns to follow
 
 - Auth in route handlers: copy `src/app/api/kb/upload/route.ts`
 - Page data fetching: copy `src/app/admin/events/[eventId]/kb/page.tsx`
-- Upload form component: copy `src/app/admin/events/[eventId]/kb/_components/kb-upload-form.tsx`
-- Change history table: copy `src/app/admin/events/[eventId]/sync/_components/history-tab.tsx`
-- Pending tab (client component with optimistic updates): copy `src/app/admin/events/[eventId]/sync/_components/pending-tab.tsx`
-- Nav items: `src/app/admin/_components/sidebar.tsx` — EVENT_SUB_NAV array
+- Client component with optimistic updates: copy `src/app/admin/events/[eventId]/sync/_components/pending-tab.tsx`
+- Cron route auth: copy `src/app/api/cron/expire-pending/route.ts`
+- Server action pattern: copy `src/app/admin/events/[eventId]/setup/actions.ts`
+- Nav items: `src/app/admin/_components/sidebar.tsx` — EVENT_SUB_NAV and SETTINGS_SUB_NAV arrays
 
 ## What still needs external credentials
 
-- DatoCMS: set DATOCMS_API_TOKEN and DATOCMS_EVENT_MODEL_ID in Vercel + .env.local
-- NOFOMO backend: pending internal API confirmation from tech lead
-- WhatsApp: set WHATSAPP_PROVIDER=meta, META_APP_SECRET, META_PERMANENT_TOKEN, META_PHONE_NUMBER_ID in Vercel + .env.local. Meta developer sandbox works for testing without business verification.
-- CRON_SECRET: set in Vercel for the hourly expire-pending cron
+- DatoCMS: DATOCMS_API_TOKEN + DATOCMS_EVENT_MODEL_ID
+- NOFOMO backend: pending Slack message to tech lead
+- WhatsApp: META_PERMANENT_TOKEN expires every 24h in sandbox — regenerate + redeploy + re-subscribe WABA
+- CRON_SECRET: set in Vercel
+- RESEND_API_KEY: set in Vercel for weekly digest emails
 
-## Next priorities
+## Current priorities (selling, not building)
 
-1. Meta developer sandbox setup — test WhatsApp flow end to end with real phone (no business verification needed)
-2. Operator demo calls — product is demo-ready, book 3 calls
-3. DatoCMS credentials — one Slack message to CMS owner
-4. NOFOMO backend API — one Slack message to tech lead
-5. Manager conversation — employment contract IP check
+1. Test customer WhatsApp flow end to end — publish Boho Beach Test, send message from phone
+2. Book 3 operator demo calls this week
+3. Manager conversation — employment contract IP check
+4. DatoCMS credentials — Slack message to CMS owner after holidays
+5. NOFOMO backend API — Slack message to tech lead after holidays
 
 ## Rules for all future Claude Code sessions
 
@@ -191,5 +244,6 @@ Magic-link (OTP) login via Supabase Auth:
 - No new packages without asking
 - No any types
 - pnpm not npm
-- createAdminClient() for all change_events, pending_changes, kb_sections, audit_log writes
+- createAdminClient() for all writes that RLS blocks
 - Run `pnpm build` before pushing — not just `pnpm typecheck`
+- Deploy via `vercel deploy --prod` not git push (Hobby plan git integration unreliable)
