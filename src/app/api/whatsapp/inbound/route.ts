@@ -272,6 +272,7 @@ async function handleCustomerSupportMessage(
     cited_section_ids:
       result.cited_section_ids.length > 0 ? result.cited_section_ids : null,
     source_section: result.source_section ?? null,
+    deflection_offered: result.deflection_offer != null,
   });
 
   // Update conversation state.
@@ -297,8 +298,9 @@ async function handleCustomerSupportMessage(
     .eq('id', conv.conversation_id);
 
   // Open an escalation row if the agent escalated.
+  let escalationInsertFailed = false;
   if (result.escalation) {
-    const { data: newEscalation } = await admin
+    const { data: newEscalation, error: escalationError } = await admin
       .from('escalations')
       .insert({
         conversation_id: conv.conversation_id,
@@ -310,17 +312,28 @@ async function handleCustomerSupportMessage(
       .select('id')
       .single();
 
-    // Notify escalation contacts via WhatsApp (best-effort, non-fatal).
-    try {
-      await notifyEscalationContacts({
-        event: { ...rawEventRow, id: resolvedEventId },
-        escalation_id: newEscalation?.id ?? 'unknown',
-        customer_phone: phone,
-        trigger_message: message.text,
-        intent: result.classified_intent ?? result.escalation.reason,
-      });
-    } catch (notifyErr) {
-      console.warn('[whatsapp/inbound] escalation notification failed (non-fatal):', notifyErr);
+    if (escalationError) {
+      console.error(
+        '[escalation] insert failed:',
+        escalationError,
+        { conversation_id: conv.conversation_id },
+      );
+      escalationInsertFailed = true;
+      // Fall through — we still owe the customer a reply, and the conversation
+      // state has already been updated to 'escalation_triggered' above.
+    } else {
+      // Notify escalation contacts via WhatsApp (best-effort, non-fatal).
+      try {
+        await notifyEscalationContacts({
+          event: { ...rawEventRow, id: resolvedEventId },
+          escalation_id: newEscalation?.id ?? 'unknown',
+          customer_phone: phone,
+          trigger_message: message.text,
+          intent: result.classified_intent ?? result.escalation.reason,
+        });
+      } catch (notifyErr) {
+        console.warn('[whatsapp/inbound] escalation notification failed (non-fatal):', notifyErr);
+      }
     }
   }
 
@@ -347,9 +360,15 @@ async function handleCustomerSupportMessage(
   }
 
   // Step 8: Send the reply.
+  // If the escalation row failed to insert above, fall back to a safe message
+  // so the customer is never left without an acknowledgement.
+  const outboundText = escalationInsertFailed
+    ? 'Your request has been escalated. Our team will follow up shortly.'
+    : result.reply_text;
+
   await adapter.sendText({
     to_phone_e164: phone,
-    text: result.reply_text,
+    text: outboundText,
   });
 }
 

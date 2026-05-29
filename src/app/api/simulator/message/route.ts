@@ -257,6 +257,7 @@ export async function POST(request: Request) {
     classified_intent: result.classified_intent,
     cited_section_ids: result.cited_section_ids.length > 0 ? result.cited_section_ids : null,
     source_section: result.source_section ?? null,
+    deflection_offered: result.deflection_offer != null,
   });
 
   // ── 9. Update conversation state ─────────────────────────────────────────
@@ -283,7 +284,7 @@ export async function POST(request: Request) {
 
   // ── 10. Open an escalation row if escalated ──────────────────────────────
   if (result.escalation) {
-    const { data: newEscalation } = await supabase
+    const { data: newEscalation, error: escalationError } = await supabase
       .from('escalations')
       .insert({
         conversation_id: conversationId,
@@ -294,6 +295,18 @@ export async function POST(request: Request) {
       })
       .select('id')
       .single();
+
+    if (escalationError) {
+      console.error(
+        '[escalation] insert failed:',
+        escalationError,
+        { conversation_id: conversationId },
+      );
+      return NextResponse.json(
+        { error: `Failed to record escalation: ${escalationError.message}` },
+        { status: 500 },
+      );
+    }
 
     // Notify escalation contacts via WhatsApp (best-effort, non-fatal).
     try {

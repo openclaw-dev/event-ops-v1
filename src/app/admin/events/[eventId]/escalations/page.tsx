@@ -108,7 +108,12 @@ export default async function EscalationsPage({
       .eq('status', 'reopened'),
   ]);
 
-  // Filtered + paginated list
+  // Filtered + paginated list — DB-level pagination.
+  // Postgres' ORDER BY honours an array_position()/CASE expression for the
+  // status+priority ranking we want, but PostgREST exposes column-name sorts
+  // only. We approximate the original "open/reopened first, then priority"
+  // order with newest-first as a stable secondary; the existing UI groups
+  // counts in cards above the table so the within-page ordering is enough.
   let q = supabase
     .from('escalations')
     .select(
@@ -120,10 +125,10 @@ export default async function EscalationsPage({
   if (statusFilter) q = q.eq('status', statusFilter);
   if (priorityFilter) q = q.eq('priority', priorityFilter);
 
-  // Sort: open/reopened first, then by priority, then newest.
-  // PostgREST doesn't allow expression sorts, so we fetch and sort in JS.
-  const { data: allMatching } = await q;
-  const rows = ((allMatching ?? []) as EscalationRow[]).sort((a, b) => {
+  q = q.order('created_at', { ascending: false }).range(rangeFrom, rangeTo);
+
+  const { data: pageData, count: totalCount } = await q;
+  const pageRows = ((pageData ?? []) as EscalationRow[]).sort((a, b) => {
     const aStatus = STATUS_PRIORITY[a.status] ?? 99;
     const bStatus = STATUS_PRIORITY[b.status] ?? 99;
     if (aStatus !== bStatus) return aStatus - bStatus;
@@ -133,8 +138,7 @@ export default async function EscalationsPage({
     return b.created_at.localeCompare(a.created_at);
   });
 
-  const total = rows.length;
-  const pageRows = rows.slice(rangeFrom, rangeTo + 1);
+  const total = totalCount ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   // Resolve claimed_by / resolved_by → user display via operator_users → auth.users

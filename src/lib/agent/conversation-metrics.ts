@@ -56,7 +56,8 @@ export async function getConversationMetrics(
 
   // ── Refunds deflected ─────────────────────────────────────────────────────
   // Definition: conversations that were NOT escalated and contain at least one
-  // agent message offering a transfer, credit, or upgrade alternative.
+  // agent message with deflection_offered = true (set by the agent runtime
+  // whenever it returns a non-null deflection_offer).
   let refunds_deflected = 0;
 
   if (total > 0) {
@@ -77,8 +78,7 @@ export async function getConversationMetrics(
         .from('messages')
         .select('conversation_id')
         .in('conversation_id', nonEscalatedIds)
-        .eq('role', 'agent')
-        .or('text.ilike.%transfer%,text.ilike.%credit%,text.ilike.%upgrade%');
+        .eq('deflection_offered', true);
 
       const deflectedSet = new Set(
         (deflectionMsgs ?? []).map(

@@ -4,6 +4,8 @@ import { generateReportData } from '@/lib/report/generate-report-data';
 import { renderReport } from '@/lib/report/render-report';
 import { createServerClient } from '@/lib/supabase/server';
 
+export const runtime = 'nodejs';
+
 interface RouteParams {
   params: { eventId: string };
 }

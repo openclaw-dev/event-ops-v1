@@ -13,7 +13,7 @@
 import { createWhatsAppAdapter } from '@/lib/whatsapp/adapter-factory';
 import type { EventConfig } from '@/lib/types';
 
-const DASHBOARD_BASE = 'https://tazkar.co';
+const DASHBOARD_BASE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://tazkar.co';
 
 export async function notifyEscalationContacts(params: {
   event: Record<string, unknown>;
