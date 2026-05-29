@@ -119,7 +119,7 @@ Magic-link (OTP) login via Supabase Auth:
 - `src/app/api/cron/expire-pending/route.ts` — hourly cron
 - `src/app/admin/events/[eventId]/sync/_components/pending-tab.tsx` — pending confirmations UI
 - `src/app/admin/events/[eventId]/promoters/` — promoter management UI and API routes
-- `src/components/ui/switch.tsx` — shadcn Switch component added (`@radix-ui/react-switch` installed)
+- `src/components/ui/switch.tsx` — shadcn Switch component added
 
 ## Conventions
 
