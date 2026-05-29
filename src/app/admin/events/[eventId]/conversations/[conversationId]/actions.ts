@@ -29,6 +29,24 @@ export async function sendHumanReply(
   const text = replyText.trim();
   if (!text) return { success: false, error: 'Reply cannot be empty.' };
 
+  // ── Ownership check (RLS-scoped) ─────────────────────────────────────────
+  // The user must belong to the operator that owns this event.
+  const { data: event } = await supabase
+    .from('events')
+    .select('id, operator_id')
+    .eq('id', eventId)
+    .is('deleted_at', null)
+    .single();
+  if (!event) return { success: false, error: 'forbidden' };
+
+  const { data: membership } = await supabase
+    .from('operator_users')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('operator_id', (event as { operator_id: string }).operator_id)
+    .maybeSingle();
+  if (!membership) return { success: false, error: 'forbidden' };
+
   const admin = createAdminClient();
 
   // ── Verify conversation belongs to this event ─────────────────────────────

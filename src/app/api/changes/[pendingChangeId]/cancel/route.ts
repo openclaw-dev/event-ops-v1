@@ -25,6 +25,28 @@ export async function POST(
     return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
   }
 
+  // ── Ownership check (RLS-scoped) ───────────────────────────────────────
+  const { data: pendingRow } = await supabase
+    .from('pending_changes')
+    .select('operator_id')
+    .eq('id', params.pendingChangeId)
+    .single();
+
+  if (!pendingRow) {
+    return NextResponse.json({ status: 'not_found' }, { status: 404 });
+  }
+
+  const { data: membership } = await supabase
+    .from('operator_users')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('operator_id', (pendingRow as { operator_id: string }).operator_id)
+    .maybeSingle();
+
+  if (!membership) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
+
   // ── Cancel ──────────────────────────────────────────────────────────────
   const result = await cancelPendingChange({
     pending_change_id: params.pendingChangeId,
