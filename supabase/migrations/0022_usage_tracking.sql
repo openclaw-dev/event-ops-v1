@@ -3,7 +3,7 @@
 -- Per-operator API usage events for billing and cost visibility.
 -- ============================================================================
 
-CREATE TABLE usage_events (
+CREATE TABLE IF NOT EXISTS usage_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   operator_id UUID NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
   event_id UUID REFERENCES events(id) ON DELETE SET NULL,
