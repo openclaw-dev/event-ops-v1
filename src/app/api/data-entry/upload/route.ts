@@ -33,7 +33,8 @@ export async function POST(request: Request): Promise<NextResponse> {
   let formData: FormData;
   try {
     formData = await request.formData();
-  } catch {
+  } catch (err) {
+    console.warn('[data-entry/upload] formData parse failed:', err);
     return NextResponse.json({ error: 'Invalid multipart form data.' }, { status: 400 });
   }
 
@@ -127,22 +128,28 @@ export async function POST(request: Request): Promise<NextResponse> {
     const buffer = Buffer.from(await file.arrayBuffer());
     result = await normaliseSheet(buffer, resolvedOperatorId);
   } catch (err) {
+    console.error('[data-entry/upload] normaliseSheet threw:', err);
     return NextResponse.json(
-      { error: `Normalisation failed: ${err instanceof Error ? err.message : String(err)}` },
-      { status: 500 },
+      {
+        error:
+          "We couldn't read this file. Try resaving as .xlsx and re-uploading.",
+      },
+      { status: 422 },
     );
   }
 
   // ── 6. Merge saved confidence scores from mastersheet_mappings ───────────
   try {
     const admin = createAdminClient();
+    // .maybeSingle so a brand-new operator with no saved mapping yet doesn't
+    // produce a noisy 404 PGRST round-trip.
     const { data: savedMapping } = await admin
       .from('mastersheet_mappings')
       .select('confidence_scores, field_map')
       .eq('operator_id', resolvedOperatorId)
       .order('last_used_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (savedMapping) {
       const savedScores = (savedMapping.confidence_scores ?? {}) as Record<string, number>;
@@ -167,8 +174,8 @@ export async function POST(request: Request): Promise<NextResponse> {
       result.high_confidence_count = result.mappings.filter((m) => !m.needs_review).length;
       result.needs_review_count = result.mappings.filter((m) => m.needs_review).length;
     }
-  } catch {
-    // Non-fatal: proceed without saved mappings.
+  } catch (err) {
+    console.warn('[data-entry/upload] saved-mapping merge failed:', err);
   }
 
   return NextResponse.json(result, { status: 200 });

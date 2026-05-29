@@ -137,14 +137,14 @@ async function handleCustomerSupportMessage(
 
   // Step 2: Check for a pending event selection from a previous turn.
   let resolvedEventId: string | null = null;
-  const pending = getPendingEventSelection(phone);
+  const pending = await getPendingEventSelection(phone);
 
   if (pending) {
     const num = parseInt(message.text.trim(), 10);
     if (!isNaN(num) && num >= 1 && num <= pending.length) {
       const chosen = pending[num - 1];
       if (chosen) {
-        clearPendingEventSelection(phone);
+        await clearPendingEventSelection(phone);
         resolvedEventId = chosen.id;
       }
     } else {
@@ -170,7 +170,7 @@ async function handleCustomerSupportMessage(
     }
 
     if (routeResult.type === 'multiple') {
-      setPendingEventSelection(phone, routeResult.events);
+      await setPendingEventSelection(phone, routeResult.events);
       await adapter.sendText({
         to_phone_e164: phone,
         text: buildEventSelectionPrompt(routeResult.events),

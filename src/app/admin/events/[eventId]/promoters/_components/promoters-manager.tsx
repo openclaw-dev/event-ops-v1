@@ -8,7 +8,7 @@ import { Trash2, Loader2, AlertCircle } from 'lucide-react';
 
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -18,6 +18,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 
 // ─── Row type (mirrors promoters DB schema) ───────────────────────────────────
@@ -71,6 +81,18 @@ export function PromotersManager({ eventId, initialPromoters }: PromotersManager
   const [toggleLoading, setToggleLoading] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  // Confirm-dialog target + per-row error map (replaces native alert/confirm).
+  const [confirmTarget, setConfirmTarget] = useState<{ id: string; name: string } | null>(null);
+  const [errorById, setErrorById] = useState<Record<string, string>>({});
+
+  function setRowError(id: string, msg: string | null) {
+    setErrorById((prev) => {
+      const next = { ...prev };
+      if (msg === null) delete next[id];
+      else next[id] = msg;
+      return next;
+    });
+  }
 
   const form = useForm<AddFormData>({
     resolver: zodResolver(addFormSchema),
@@ -83,8 +105,8 @@ export function PromotersManager({ eventId, initialPromoters }: PromotersManager
 
   // ── Delete ─────────────────────────────────────────────────────────────────
 
-  async function handleDelete(id: string, name: string) {
-    if (!confirm(`Remove ${name}?`)) return;
+  async function performDelete(id: string) {
+    setRowError(id, null);
     setDeleteLoading(id);
     try {
       const res = await fetch(`/api/promoters/${id}`, { method: 'DELETE' });
@@ -92,12 +114,13 @@ export function PromotersManager({ eventId, initialPromoters }: PromotersManager
         setPromoters((prev) => prev.filter((p) => p.id !== id));
       } else {
         const data = (await res.json()) as ApiErrorBody;
-        alert(data.error ?? 'Delete failed.');
+        setRowError(id, data.error ?? 'Delete failed.');
       }
     } catch {
-      alert('Network error — please try again.');
+      setRowError(id, 'Network error — please try again.');
     } finally {
       setDeleteLoading(null);
+      setConfirmTarget(null);
     }
   }
 
@@ -168,54 +191,111 @@ export function PromotersManager({ eventId, initialPromoters }: PromotersManager
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border">
-          {promoters.map((promoter, i) => (
-            <div
-              key={promoter.id}
-              className={cn(
-                'flex items-center gap-3 px-4 py-3 transition-colors',
-                i > 0 && 'border-t',
-                !promoter.is_active && 'opacity-60',
-              )}
-            >
-              {/* Name + phone */}
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">{promoter.display_name}</p>
-                <p className="font-mono text-xs text-muted-foreground">
-                  {promoter.phone_e164}
-                </p>
-              </div>
-
-              {/* Language badge */}
-              <Badge variant="outline" className="shrink-0 text-xs">
-                {promoter.preferred_language.toUpperCase()}
-              </Badge>
-
-              {/* Active toggle */}
-              <Switch
-                checked={promoter.is_active}
-                disabled={toggleLoading === promoter.id}
-                onCheckedChange={(checked) => void handleToggleActive(promoter.id, checked)}
-                aria-label={`Toggle ${promoter.display_name} active`}
-              />
-
-              {/* Delete button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={deleteLoading === promoter.id}
-                onClick={() => void handleDelete(promoter.id, promoter.display_name)}
-                className="shrink-0 text-muted-foreground hover:text-destructive"
-              >
-                {deleteLoading === promoter.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Trash2 className="h-4 w-4" />
+          {promoters.map((promoter, i) => {
+            const rowError = errorById[promoter.id];
+            return (
+              <div
+                key={promoter.id}
+                className={cn(
+                  'transition-colors',
+                  i > 0 && 'border-t',
+                  !promoter.is_active && 'opacity-60',
                 )}
-              </Button>
-            </div>
-          ))}
+              >
+                <div className="flex items-center gap-3 px-4 py-3">
+                  {/* Name + phone */}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{promoter.display_name}</p>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      {promoter.phone_e164}
+                    </p>
+                  </div>
+
+                  {/* Language badge */}
+                  <Badge variant="outline" className="shrink-0 text-xs">
+                    {promoter.preferred_language.toUpperCase()}
+                  </Badge>
+
+                  {/* Active toggle */}
+                  <Switch
+                    checked={promoter.is_active}
+                    disabled={toggleLoading === promoter.id}
+                    onCheckedChange={(checked) => void handleToggleActive(promoter.id, checked)}
+                    aria-label={`Toggle ${promoter.display_name} active`}
+                  />
+
+                  {/* Delete button — opens confirm dialog */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={deleteLoading === promoter.id}
+                    onClick={() =>
+                      setConfirmTarget({ id: promoter.id, name: promoter.display_name })
+                    }
+                    className="shrink-0 text-muted-foreground hover:text-destructive"
+                  >
+                    {deleteLoading === promoter.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+
+                {rowError && (
+                  <div
+                    role="alert"
+                    className="mx-4 mb-3 flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                  >
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span className="break-words">{rowError}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
+
+      {/* ── Delete confirmation dialog ────────────────────────────────────── */}
+      <AlertDialog
+        open={confirmTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && deleteLoading === null) setConfirmTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Remove {confirmTarget?.name ?? 'this promoter'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              They will lose the ability to send change requests via WhatsApp.
+              This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteLoading !== null}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (confirmTarget) void performDelete(confirmTarget.id);
+              }}
+              disabled={deleteLoading !== null}
+              className={cn(buttonVariants({ variant: 'destructive' }))}
+            >
+              {deleteLoading !== null ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Removing…
+                </>
+              ) : (
+                'Remove'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ── Add promoter form ───────────────────────────────────────────────── */}
       <div className="rounded-lg border p-4">

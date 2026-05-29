@@ -497,8 +497,8 @@ export async function normaliseSheet(buf: Buffer, operatorId?: string): Promise<
           };
         }
       }
-    } catch {
-      // Non-fatal: proceed to Haiku if cache is unavailable.
+    } catch (err) {
+      console.warn('[normaliser] cache lookup failed:', err);
     }
   }
 
@@ -607,8 +607,8 @@ export async function normaliseSheet(buf: Buffer, operatorId?: string): Promise<
         },
         { onConflict: 'operator_id,mapping_name' },
       );
-    } catch {
-      // Non-fatal: proceed without caching.
+    } catch (err) {
+      console.warn('[normaliser] cache store failed:', err);
     }
   }
 

@@ -11,7 +11,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  const count = await expireStalePendingChanges();
-  console.log(`[cron/expire-pending] Expired ${count} stale pending changes`);
-  return NextResponse.json({ expired: count });
+  try {
+    const count = await expireStalePendingChanges();
+    console.log(`[cron/expire-pending] Expired ${count} stale pending changes`);
+    return NextResponse.json({ expired: count });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[cron/expire-pending] failed:', err);
+    return NextResponse.json({ error: msg, expired: 0 }, { status: 200 });
+  }
 }

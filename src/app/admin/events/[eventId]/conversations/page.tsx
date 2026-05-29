@@ -174,38 +174,47 @@ export default async function ConversationsPage({
   }
 
   // ── Build main conversations query ────────────────────────────────────────
-  let q = supabase
-    .from('conversations')
-    .select(
-      'id, customer_phone_e164, language, state, channel, matched_order_id, closed_at, created_at, updated_at',
-      { count: 'exact' },
-    )
-    .eq('event_id', params.eventId)
-    .order('created_at', { ascending: false })
-    .range(rangeFrom, rangeTo);
+  // Short-circuit: if the search produced zero matching IDs there is nothing
+  // to look up — skip the DB round-trip entirely.
+  const searchYieldedEmpty = searchConvoIds !== null && searchConvoIds.length === 0;
 
-  // Intent filter (maps to one or more state values).
-  if (intentFilter && INTENT_TO_STATES[intentFilter]) {
-    q = q.in('state', INTENT_TO_STATES[intentFilter]);
-  } else if (stateFilter) {
-    // Legacy state param — keep backward compat.
-    q = q.eq('state', stateFilter);
-  }
+  let rows: ConversationRow[] = [];
+  let total = 0;
 
-  if (languageFilter) q = q.eq('language', languageFilter);
-  if (since)          q = q.gte('created_at', since);
+  if (!searchYieldedEmpty) {
+    let q = supabase
+      .from('conversations')
+      .select(
+        'id, customer_phone_e164, language, state, channel, matched_order_id, closed_at, created_at, updated_at',
+        { count: 'exact' },
+      )
+      .eq('event_id', params.eventId)
+      .order('created_at', { ascending: false })
+      .range(rangeFrom, rangeTo);
 
-  if (searchConvoIds !== null) {
-    if (searchConvoIds.length === 0) {
-      q = q.eq('id', '00000000-0000-0000-0000-000000000000'); // force empty
-    } else {
+    // Intent filter (maps to one or more state values).
+    if (intentFilter && INTENT_TO_STATES[intentFilter]) {
+      q = q.in('state', INTENT_TO_STATES[intentFilter]);
+    } else if (stateFilter) {
+      // Legacy state param — keep backward compat.
+      q = q.eq('state', stateFilter);
+    }
+
+    if (languageFilter) q = q.eq('language', languageFilter);
+    if (since)          q = q.gte('created_at', since);
+
+    if (searchConvoIds !== null) {
       q = q.in('id', searchConvoIds);
     }
+
+    const { data: conversations, count } = await q;
+    rows = (conversations ?? []) as ConversationRow[];
+    total = count ?? 0;
   }
 
-  const [{ data: conversations, count }, metrics] = await Promise.all([q, metricsPromise]);
-  const rows      = (conversations ?? []) as ConversationRow[];
-  const total     = count ?? 0;
+  // Metrics always loads — it isn't gated by the search, so users still see
+  // their event-wide performance numbers above an empty result table.
+  const metrics = await metricsPromise;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   // ── Lowest ticket price for savings estimate ─────────────────────────────

@@ -17,6 +17,10 @@ import type { EventConfig } from '@/lib/types';
  * conversation activity across all their events.
  *
  * Operators with zero conversations in the period are silently skipped.
+ *
+ * The handler is wrapped in a single try/catch so any uncaught failure
+ * returns a structured 200 response (Vercel cron retries on non-200, which
+ * we don't want for an idempotent weekly digest).
  */
 export async function GET(req: NextRequest) {
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -25,130 +29,181 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  const admin = createAdminClient();
+  try {
+    const admin = createAdminClient();
 
-  // ── Time window ───────────────────────────────────────────────────────────
-  const now = new Date();
-  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const since = weekAgo.toISOString();
-  const period = formatPeriod(weekAgo, new Date(now.getTime() - 24 * 60 * 60 * 1000));
+    // ── Time window ────────────────────────────────────────────────────────
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const since = weekAgo.toISOString();
+    const period = formatPeriod(weekAgo, new Date(now.getTime() - 24 * 60 * 60 * 1000));
 
-  // ── Fetch all operators ───────────────────────────────────────────────────
-  const { data: operatorRows } = await admin
-    .from('operators')
-    .select('id, name');
-
-  const operators = (operatorRows ?? []) as { id: string; name: string }[];
-  if (operators.length === 0) {
-    return NextResponse.json({ sent: 0, skipped: 0, results: [] });
-  }
-
-  const results: { operator: string; status: string }[] = [];
-
-  for (const operator of operators) {
-    // ── Resolve owner email ────────────────────────────────────────────────
-    const { data: ownerRow } = await admin
-      .from('operator_users')
-      .select('user_id, invited_email')
-      .eq('operator_id', operator.id)
-      .eq('role', 'owner')
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (!ownerRow) {
-      results.push({ operator: operator.name, status: 'skipped (no owner user)' });
-      continue;
+    // ── Fetch all operators ────────────────────────────────────────────────
+    const { data: operatorRows } = await admin.from('operators').select('id, name');
+    const operators = (operatorRows ?? []) as { id: string; name: string }[];
+    if (operators.length === 0) {
+      return NextResponse.json({ sent: 0, skipped: 0, results: [] });
     }
 
-    const { user_id: userId, invited_email: invitedEmail } = ownerRow as {
-      user_id: string | null;
-      invited_email: string | null;
-    };
-
-    let toEmail: string | null = null;
-    if (userId) {
-      const { data: authData } = await admin.auth.admin.getUserById(userId);
-      toEmail = authData?.user?.email ?? invitedEmail ?? null;
-    } else {
-      toEmail = invitedEmail;
-    }
-
-    if (!toEmail) {
-      results.push({ operator: operator.name, status: 'skipped (no email address)' });
-      continue;
-    }
-
-    // ── Fetch events for this operator ─────────────────────────────────────
-    const { data: eventRows } = await admin
+    // ── Batch-load all events for all operators in ONE query ───────────────
+    // Avoids N round-trips to Supabase inside the per-operator loop.
+    const operatorIds = operators.map((o) => o.id);
+    const { data: allEventRows } = await admin
       .from('events')
-      .select('id, name, config')
-      .eq('operator_id', operator.id)
+      .select('id, name, config, operator_id')
+      .in('operator_id', operatorIds)
       .is('deleted_at', null);
 
-    const events = (eventRows ?? []) as { id: string; name: string; config: unknown }[];
-
-    if (events.length === 0) {
-      results.push({ operator: operator.name, status: 'skipped (no events)' });
-      continue;
+    const eventsByOperator = new Map<
+      string,
+      { id: string; name: string; config: unknown }[]
+    >();
+    for (const row of (allEventRows ?? []) as Array<{
+      id: string;
+      name: string;
+      config: unknown;
+      operator_id: string;
+    }>) {
+      const list = eventsByOperator.get(row.operator_id) ?? [];
+      list.push({ id: row.id, name: row.name, config: row.config });
+      eventsByOperator.set(row.operator_id, list);
     }
 
-    // ── Collect per-event metrics ──────────────────────────────────────────
-    const digestEvents: DigestEvent[] = [];
-    let totalSarSaved = 0;
+    // ── Process all operators in parallel ──────────────────────────────────
+    const settled = await Promise.allSettled(
+      operators.map((operator) =>
+        processOperator(operator, eventsByOperator.get(operator.id) ?? [], since, period, admin),
+      ),
+    );
 
-    for (const ev of events) {
-      const metrics = await getConversationMetrics(ev.id, { since });
-      if (metrics.total === 0) continue;
-
-      const eventConfig = (ev.config ?? {}) as Partial<EventConfig>;
-      const prices = (eventConfig.ticket_tiers ?? [])
-        .map((t) => t.price ?? 0)
-        .filter((p) => p > 0);
-      const lowestPrice = prices.length > 0 ? Math.min(...prices) : 150;
-      totalSarSaved += metrics.refunds_deflected * lowestPrice;
-
-      digestEvents.push({
-        name: ev.name,
-        total_conversations: metrics.total,
-        resolved_by_ai: metrics.resolved_by_ai,
-        escalated: metrics.escalated,
-        refunds_deflected: metrics.refunds_deflected,
-        coverage_score: metrics.resolution_rate,
-      });
-    }
-
-    if (digestEvents.length === 0) {
-      results.push({ operator: operator.name, status: 'skipped (no conversations this week)' });
-      continue;
-    }
-
-    // ── Build and send digest ──────────────────────────────────────────────
-    const html = buildWeeklyDigestHtml({
-      operator_name: operator.name,
-      period,
-      events: digestEvents,
-      total_sar_saved: totalSarSaved,
+    const results: { operator: string; status: string }[] = settled.map((res, i) => {
+      if (res.status === 'fulfilled') return res.value;
+      // A throw inside processOperator becomes a "failed" entry; the overall
+      // batch survives because allSettled never short-circuits.
+      console.error(
+        '[cron/weekly-digest] operator processing threw:',
+        operators[i].name,
+        res.reason,
+      );
+      return { operator: operators[i].name, status: 'failed (uncaught error)' };
     });
 
-    const { success, error } = await sendEmail({
-      to: toEmail,
-      subject: `Your weekly event ops summary — ${period}`,
-      html,
-    });
+    const sent = results.filter((r) => r.status.startsWith('sent')).length;
+    const skipped = results.filter((r) => r.status.startsWith('skipped')).length;
 
-    if (success) {
-      results.push({ operator: operator.name, status: `sent to ${toEmail}` });
-    } else {
-      results.push({ operator: operator.name, status: `error: ${error ?? 'unknown'}` });
-    }
+    console.log(`[cron/weekly-digest] ${sent} sent, ${skipped} skipped`);
+    return NextResponse.json({ sent, skipped, results });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[cron/weekly-digest] uncaught failure:', err);
+    return NextResponse.json({ error: msg, sent: 0 }, { status: 200 });
+  }
+}
+
+// ─── Per-operator processing ─────────────────────────────────────────────────
+
+async function processOperator(
+  operator: { id: string; name: string },
+  events: { id: string; name: string; config: unknown }[],
+  since: string,
+  period: string,
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<{ operator: string; status: string }> {
+  // ── Resolve owner email ───────────────────────────────────────────────────
+  const { data: ownerRow } = await admin
+    .from('operator_users')
+    .select('user_id, invited_email')
+    .eq('operator_id', operator.id)
+    .eq('role', 'owner')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (!ownerRow) {
+    return { operator: operator.name, status: 'skipped (no owner user)' };
   }
 
-  const sent = results.filter((r) => r.status.startsWith('sent')).length;
-  const skipped = results.filter((r) => r.status.startsWith('skipped')).length;
+  const { user_id: userId, invited_email: invitedEmail } = ownerRow as {
+    user_id: string | null;
+    invited_email: string | null;
+  };
 
-  console.log(`[cron/weekly-digest] ${sent} sent, ${skipped} skipped`);
-  return NextResponse.json({ sent, skipped, results });
+  // ── Wrap the auth lookup so one bad operator doesn't abort the batch ──────
+  let toEmail: string | null = null;
+  if (userId) {
+    try {
+      const { data: authData } = await admin.auth.admin.getUserById(userId);
+      toEmail = authData?.user?.email ?? invitedEmail ?? null;
+    } catch (authErr) {
+      console.warn(
+        '[cron/weekly-digest] auth lookup failed for operator:',
+        operator.name,
+        authErr,
+      );
+      return { operator: operator.name, status: 'skipped (auth lookup failed)' };
+    }
+  } else {
+    toEmail = invitedEmail;
+  }
+
+  if (!toEmail) {
+    return { operator: operator.name, status: 'skipped (no email address)' };
+  }
+
+  if (events.length === 0) {
+    return { operator: operator.name, status: 'skipped (no events)' };
+  }
+
+  // ── Per-event metrics in parallel ─────────────────────────────────────────
+  const metricResults = await Promise.allSettled(
+    events.map((ev) => getConversationMetrics(ev.id, { since })),
+  );
+
+  const digestEvents: DigestEvent[] = [];
+  let totalSarSaved = 0;
+
+  events.forEach((ev, i) => {
+    const r = metricResults[i];
+    if (r.status !== 'fulfilled' || r.value.total === 0) return;
+
+    const metrics = r.value;
+    const eventConfig = (ev.config ?? {}) as Partial<EventConfig>;
+    const prices = (eventConfig.ticket_tiers ?? [])
+      .map((t) => t.price ?? 0)
+      .filter((p) => p > 0);
+    const lowestPrice = prices.length > 0 ? Math.min(...prices) : 150;
+    totalSarSaved += metrics.refunds_deflected * lowestPrice;
+
+    digestEvents.push({
+      name: ev.name,
+      total_conversations: metrics.total,
+      resolved_by_ai: metrics.resolved_by_ai,
+      escalated: metrics.escalated,
+      refunds_deflected: metrics.refunds_deflected,
+      coverage_score: metrics.resolution_rate,
+    });
+  });
+
+  if (digestEvents.length === 0) {
+    return { operator: operator.name, status: 'skipped (no conversations this week)' };
+  }
+
+  // ── Build and send digest ─────────────────────────────────────────────────
+  const html = buildWeeklyDigestHtml({
+    operator_name: operator.name,
+    period,
+    events: digestEvents,
+    total_sar_saved: totalSarSaved,
+  });
+
+  const { success, error } = await sendEmail({
+    to: toEmail,
+    subject: `Your weekly event ops summary — ${period}`,
+    html,
+  });
+
+  if (success) return { operator: operator.name, status: `sent to ${toEmail}` };
+  return { operator: operator.name, status: `error: ${error ?? 'unknown'}` };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
