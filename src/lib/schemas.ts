@@ -69,7 +69,11 @@ export const eventSetupSchema = z
         z.object({
           name: z.string().min(1, 'Contact name is required.'),
           hours: z.string().min(1, 'Hours are required.'),
-          method: z.string().min(1, 'Method is required.'),
+          method: z.enum(['in-app handoff', 'whatsapp'], {
+            message: 'Select a notification method.',
+          }),
+          /** Required when method is 'whatsapp'. */
+          phone: z.string().optional(),
         }),
       )
       .min(1, 'At least one escalation contact is required.'),
@@ -135,7 +139,7 @@ export const eventSetupDefaults: EventSetupFormData = {
   parking_info: '',
   vip_orders_always_escalate: true,
   escalation_keywords: [],
-  escalation_contacts: [{ name: '', hours: '', method: '' }],
+  escalation_contacts: [{ name: '', hours: '', method: 'in-app handoff' as const, phone: '' }],
   ticket_tiers: [{ name: '', price: undefined, description: '' }],
 };
 

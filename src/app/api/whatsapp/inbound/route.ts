@@ -12,6 +12,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { trackUsage } from '@/lib/billing/track-usage';
 import { createWhatsAppAdapter } from '@/lib/whatsapp/adapter-factory';
 import type { InboundMessage, InboundTextMessage, WhatsAppAdapter } from '@/lib/whatsapp/types';
 import { extractChanges } from '@/lib/data-entry/whatsapp-change-extractor';
@@ -26,6 +27,7 @@ import {
   type PendingChange,
 } from '@/lib/data-entry/pending-changes';
 import { runAgent } from '@/lib/agent/state-machine';
+import { notifyEscalationContacts } from '@/lib/agent/escalation-notifier';
 import type { ConversationSnapshot, Language, OrderContext } from '@/lib/agent/types';
 import type { EventConfig } from '@/lib/types';
 import {
@@ -191,7 +193,7 @@ async function handleCustomerSupportMessage(
   // Step 5: Fetch event config (needed by the state machine).
   const { data: eventRow } = await admin
     .from('events')
-    .select('config, operator_id')
+    .select('config, operator_id, timezone')
     .eq('id', resolvedEventId)
     .single();
 
@@ -199,7 +201,11 @@ async function handleCustomerSupportMessage(
     throw new Error(`Event ${resolvedEventId} not found`);
   }
 
-  const eventConfig = (eventRow as Record<string, unknown>).config as EventConfig;
+  const rawEventRow = eventRow as Record<string, unknown>;
+  const eventConfig: EventConfig = {
+    ...(rawEventRow.config as EventConfig),
+    timezone: rawEventRow.timezone as string | undefined,
+  };
 
   // Step 6: Hydrate matched order if conversation has one.
   let matchedOrder: OrderContext | null = null;
@@ -265,6 +271,7 @@ async function handleCustomerSupportMessage(
     classified_intent: result.classified_intent,
     cited_section_ids:
       result.cited_section_ids.length > 0 ? result.cited_section_ids : null,
+    source_section: result.source_section ?? null,
   });
 
   // Update conversation state.
@@ -291,13 +298,30 @@ async function handleCustomerSupportMessage(
 
   // Open an escalation row if the agent escalated.
   if (result.escalation) {
-    await admin.from('escalations').insert({
-      conversation_id: conv.conversation_id,
-      event_id: resolvedEventId,
-      reason: result.escalation.reason,
-      priority: result.escalation.priority,
-      summary_for_ops: result.escalation.summary_for_ops,
-    });
+    const { data: newEscalation } = await admin
+      .from('escalations')
+      .insert({
+        conversation_id: conv.conversation_id,
+        event_id: resolvedEventId,
+        reason: result.escalation.reason,
+        priority: result.escalation.priority,
+        summary_for_ops: result.escalation.summary_for_ops,
+      })
+      .select('id')
+      .single();
+
+    // Notify escalation contacts via WhatsApp (best-effort, non-fatal).
+    try {
+      await notifyEscalationContacts({
+        event: { ...rawEventRow, id: resolvedEventId },
+        escalation_id: newEscalation?.id ?? 'unknown',
+        customer_phone: phone,
+        trigger_message: message.text,
+        intent: result.classified_intent ?? result.escalation.reason,
+      });
+    } catch (notifyErr) {
+      console.warn('[whatsapp/inbound] escalation notification failed (non-fatal):', notifyErr);
+    }
   }
 
   // Audit log (non-fatal).
@@ -384,6 +408,16 @@ async function handleInboundMessage(
       // Extract structured changes via Haiku.
       const language = promoter.preferred_language as 'en' | 'ar' | 'ru';
       const extraction = await extractChanges(message.text, eventRow, language);
+
+      // Fire-and-forget usage tracking (non-blocking).
+      void trackUsage({
+        operator_id: promoter.operator_id,
+        event_id: promoter.event_id ?? undefined,
+        event_type: 'change_extraction',
+        model: 'claude-haiku-4-5-20251001',
+        input_tokens: extraction.input_tokens,
+        output_tokens: extraction.output_tokens,
+      });
 
       // Generate diff against current event state.
       const diff = generateDiff(extraction.changes, eventRow);

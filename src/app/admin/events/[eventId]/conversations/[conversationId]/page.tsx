@@ -1,10 +1,21 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { AlertTriangle, ArrowLeft, Star, ChevronDown } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Star,
+  ChevronDown,
+  UserRound,
+  Bot,
+  User,
+} from 'lucide-react';
 
 import { createServerClient } from '@/lib/supabase/server';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { HumanReplyForm } from './_components/human-reply-form';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const STATE_LABELS: Record<string, string> = {
   greeting: 'Greeting',
@@ -16,13 +27,15 @@ const STATE_LABELS: Record<string, string> = {
 };
 
 const STATE_COLORS: Record<string, string> = {
-  greeting:              'bg-slate-50 text-slate-700 border-slate-200',
-  faq_answer:            'bg-emerald-50 text-emerald-700 border-emerald-200',
-  order_lookup:          'bg-amber-50 text-amber-700 border-amber-200',
-  refund_deflection:     'bg-blue-50 text-blue-700 border-blue-200',
-  escalation_triggered:  'bg-red-50 text-red-700 border-red-200',
-  session_closed:        'bg-zinc-100 text-zinc-700 border-zinc-200',
+  greeting:             'bg-slate-50 text-slate-700 border-slate-200',
+  faq_answer:           'bg-emerald-50 text-emerald-700 border-emerald-200',
+  order_lookup:         'bg-amber-50 text-amber-700 border-amber-200',
+  refund_deflection:    'bg-blue-50 text-blue-700 border-blue-200',
+  escalation_triggered: 'bg-red-50 text-red-700 border-red-200',
+  session_closed:       'bg-zinc-100 text-zinc-700 border-zinc-200',
 };
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ConversationDetailPageProps {
   params: { eventId: string; conversationId: string };
@@ -34,8 +47,25 @@ interface MessageRow {
   text: string;
   classified_intent: string | null;
   cited_section_ids: string[] | null;
+  source_section: string | null;
   created_at: string;
 }
+
+interface EscalationRow {
+  id: string;
+  reason: string;
+  summary_for_ops: string;
+  priority: string;
+  status: string;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+type TranscriptItem =
+  | { kind: 'message'; msg: MessageRow }
+  | { kind: 'divider'; reason: string; summary: string };
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function ConversationDetailPage({
   params,
@@ -66,7 +96,7 @@ export default async function ConversationDetailPage({
   const [messagesRes, orderRes, escalationsRes, sectionsRes] = await Promise.all([
     supabase
       .from('messages')
-      .select('id, role, text, classified_intent, cited_section_ids, created_at')
+      .select('id, role, text, classified_intent, cited_section_ids, source_section, created_at')
       .eq('conversation_id', params.conversationId)
       .order('created_at', { ascending: true }),
     convo.matched_order_id
@@ -105,21 +135,21 @@ export default async function ConversationDetailPage({
         transfer_eligible: boolean;
       }
     | null;
-  const escalations = (escalationsRes.data ?? []) as Array<{
-    id: string;
-    reason: string;
-    summary_for_ops: string;
-    priority: string;
-    status: string;
-    created_at: string;
-    resolved_at: string | null;
-  }>;
+  const escalations = (escalationsRes.data ?? []) as EscalationRow[];
   const sections = (sectionsRes.data ?? []) as Array<{
     section_id: string;
     question_en: string | null;
     answer_en: string;
   }>;
   const sectionLookup = new Map(sections.map((s) => [s.section_id, s]));
+
+  // ── Build transcript items (messages interleaved with escalation divider) ──
+  const transcriptItems = buildTranscriptItems(messages, escalations);
+
+  // ── Track first user message for intent badge ──────────────────────────────
+  const firstUserMsgId = messages.find((m) => m.role === 'user')?.id ?? null;
+
+  const isEscalated = convo.state === 'escalation_triggered';
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6 px-8 py-8">
@@ -254,66 +284,196 @@ export default async function ConversationDetailPage({
         </div>
       )}
 
-      {/* Transcript */}
+      {/* ── Transcript ─────────────────────────────────────────────────────── */}
       <section className="space-y-3">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Transcript ({messages.length} messages)
         </h3>
+
         {messages.length === 0 ? (
           <div className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
             No messages recorded for this conversation.
           </div>
         ) : (
-          <ol className="space-y-3">
-            {messages.map((m) => (
-              <li
-                key={m.id}
-                className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-[80%] space-y-1.5 rounded-lg px-3 py-2.5 ${
-                    m.role === 'user'
-                      ? 'bg-primary text-primary-foreground'
-                      : m.role === 'human_operator'
-                      ? 'bg-amber-50 text-amber-900 border border-amber-200'
-                      : 'bg-muted text-foreground'
-                  }`}
-                >
-                  <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.text}</p>
-
-                  {(m.classified_intent ||
-                    (m.cited_section_ids && m.cited_section_ids.length > 0)) && (
-                    <div className="flex flex-wrap items-center gap-1 text-[10px]">
-                      {m.role === 'human_operator' && (
-                        <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium uppercase">
-                          Human operator
-                        </span>
-                      )}
-                      {m.classified_intent && (
-                        <span className="rounded bg-background/60 px-1.5 py-0.5 font-mono">
-                          {m.classified_intent}
-                        </span>
-                      )}
-                      {m.cited_section_ids && m.cited_section_ids.length > 0 && (
-                        <CitationDisclosure
-                          ids={m.cited_section_ids}
-                          sectionLookup={sectionLookup}
-                        />
-                      )}
+          <ol className="space-y-4">
+            {transcriptItems.map((item, idx) => {
+              if (item.kind === 'divider') {
+                return (
+                  <li key={`divider-${idx}`} className="py-1">
+                    <div className="flex items-center gap-3">
+                      <div className="h-px flex-1 bg-red-200" />
+                      <span className="flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-600">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        Escalated to human
+                      </span>
+                      <div className="h-px flex-1 bg-red-200" />
                     </div>
-                  )}
+                    {item.reason && (
+                      <p className="mt-1.5 text-center text-[11px] text-red-500">
+                        Reason: {item.reason}
+                      </p>
+                    )}
+                  </li>
+                );
+              }
 
-                  <div className="text-[10px] opacity-60">
-                    {formatTime(m.created_at)}
+              const m = item.msg;
+              const isUser = m.role === 'user';
+              const isHuman = m.role === 'human_operator';
+              const isFirstUser = m.id === firstUserMsgId;
+
+              return (
+                <li
+                  key={m.id}
+                  className={`flex flex-col gap-1 ${isUser ? 'items-end' : 'items-start'}`}
+                >
+                  {/* Meta row: role badge + timestamp + intent */}
+                  <div
+                    className={`flex items-center gap-1.5 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
+                  >
+                    {/* Role badge */}
+                    <span
+                      className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                        isUser
+                          ? 'bg-zinc-100 text-zinc-700'
+                          : isHuman
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-emerald-100 text-emerald-700'
+                      }`}
+                    >
+                      {isUser ? (
+                        <UserRound className="h-2.5 w-2.5" />
+                      ) : isHuman ? (
+                        <User className="h-2.5 w-2.5" />
+                      ) : (
+                        <Bot className="h-2.5 w-2.5" />
+                      )}
+                      {isUser ? 'Customer' : isHuman ? 'Human' : 'Agent'}
+                    </span>
+
+                    {/* Timestamp */}
+                    <span className="text-[10px] text-muted-foreground">
+                      {formatTime(m.created_at)}
+                    </span>
+
+                    {/* Intent badge — shown on all user messages with a classification */}
+                    {isUser && m.classified_intent && (
+                      <span
+                        className={`rounded bg-zinc-200/60 px-1.5 py-0.5 font-mono text-[10px] text-zinc-700 ${
+                          isFirstUser ? 'font-semibold' : ''
+                        }`}
+                      >
+                        {m.classified_intent}
+                      </span>
+                    )}
                   </div>
-                </div>
-              </li>
-            ))}
+
+                  {/* Bubble */}
+                  <div
+                    className={`max-w-[80%] space-y-1.5 rounded-lg px-3 py-2.5 ${
+                      isUser
+                        ? 'bg-primary text-primary-foreground'
+                        : isHuman
+                        ? 'border border-blue-200 bg-blue-50 text-blue-900'
+                        : 'bg-muted text-foreground'
+                    }`}
+                  >
+                    <p className="text-sm whitespace-pre-wrap leading-relaxed">
+                      {m.text}
+                    </p>
+
+                    {/* Source section badge (agent messages) */}
+                    {!isUser && !isHuman && m.source_section && (
+                      <p className="text-[10px] text-muted-foreground/70 mt-1">
+                        Source: {m.source_section}
+                      </p>
+                    )}
+
+                    {/* Citations (agent messages) */}
+                    {m.cited_section_ids && m.cited_section_ids.length > 0 && (
+                      <CitationDisclosure
+                        ids={m.cited_section_ids}
+                        sectionLookup={sectionLookup}
+                      />
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ol>
         )}
       </section>
+
+      {/* ── Human reply (escalated conversations only) ───────────────────── */}
+      {isEscalated && (
+        <>
+          <Separator />
+          <section className="space-y-3">
+            <div>
+              <h3 className="text-sm font-semibold">Reply as human</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Your reply will be recorded here and sent to the customer
+                {convo.channel === 'whatsapp' ? ' via WhatsApp' : ''}.
+                The conversation will be marked closed.
+              </p>
+            </div>
+            <HumanReplyForm
+              eventId={params.eventId}
+              conversationId={params.conversationId}
+              channel={convo.channel}
+            />
+          </section>
+        </>
+      )}
     </div>
   );
+}
+
+// ─── Transcript helpers ───────────────────────────────────────────────────────
+
+/**
+ * Interleaves escalation dividers into the flat message list at the chronological
+ * point where the earliest escalation was triggered.
+ */
+function buildTranscriptItems(
+  messages: MessageRow[],
+  escalations: EscalationRow[],
+): TranscriptItem[] {
+  if (escalations.length === 0) {
+    return messages.map((msg) => ({ kind: 'message', msg }));
+  }
+
+  // Use the earliest escalation as the divider anchor.
+  const earliest = [...escalations].sort((a, b) =>
+    a.created_at.localeCompare(b.created_at),
+  )[0];
+
+  const items: TranscriptItem[] = [];
+  let dividerAdded = false;
+
+  for (const msg of messages) {
+    if (!dividerAdded && msg.created_at >= earliest.created_at) {
+      items.push({
+        kind: 'divider',
+        reason: earliest.reason,
+        summary: earliest.summary_for_ops,
+      });
+      dividerAdded = true;
+    }
+    items.push({ kind: 'message', msg });
+  }
+
+  // If all messages precede the escalation timestamp (no human replies yet),
+  // append the divider at the end.
+  if (!dividerAdded) {
+    items.push({
+      kind: 'divider',
+      reason: earliest.reason,
+      summary: earliest.summary_for_ops,
+    });
+  }
+
+  return items;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -323,11 +483,14 @@ function CitationDisclosure({
   sectionLookup,
 }: {
   ids: string[];
-  sectionLookup: Map<string, { section_id: string; question_en: string | null; answer_en: string }>;
+  sectionLookup: Map<
+    string,
+    { section_id: string; question_en: string | null; answer_en: string }
+  >;
 }) {
   return (
     <details className="group">
-      <summary className="cursor-pointer list-none rounded bg-background/60 px-1.5 py-0.5 font-medium text-foreground hover:bg-background/80">
+      <summary className="cursor-pointer list-none rounded bg-background/60 px-1.5 py-0.5 text-[10px] font-medium text-foreground hover:bg-background/80">
         <span className="inline-flex items-center gap-0.5">
           <ChevronDown className="h-2.5 w-2.5 transition-transform group-open:rotate-180" />
           {ids.length} citation{ids.length !== 1 ? 's' : ''}
@@ -355,7 +518,7 @@ function CitationDisclosure({
   );
 }
 
-// ─── Format helpers ──────────────────────────────────────────────────────────
+// ─── Format helpers ───────────────────────────────────────────────────────────
 
 function formatDateTime(iso: string): string {
   const d = new Date(iso);

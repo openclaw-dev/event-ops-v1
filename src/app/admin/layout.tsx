@@ -47,7 +47,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const { data: events } = currentOperator.id
     ? await supabase
         .from('events')
-        .select('id, name, status, start_date')
+        .select('id, name, status, start_date, is_demo')
         .eq('operator_id', currentOperator.id)
         .is('deleted_at', null)
         .order('start_date', { ascending: true })
@@ -57,6 +57,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     id: e.id as string,
     name: e.name as string,
     status: e.status as string,
+    start_date: e.start_date as string,
+    is_demo: (e.is_demo as boolean) ?? false,
   }));
 
   return (

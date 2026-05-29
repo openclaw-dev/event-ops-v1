@@ -15,10 +15,18 @@ interface OperatorKbUploadFormProps {
   operatorId: string;
 }
 
+const LANGUAGE_OPTIONS = [
+  { value: 'en',  label: 'English' },
+  { value: 'ar',  label: 'Arabic' },
+  { value: 'ru',  label: 'Russian' },
+  { value: 'all', label: 'All languages' },
+] as const;
+
 export function OperatorKbUploadForm({ operatorId }: OperatorKbUploadFormProps) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const [language, setLanguage] = useState<'en' | 'ar' | 'ru' | 'all'>('en');
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<UploadResult | null>(null);
@@ -32,6 +40,7 @@ export function OperatorKbUploadForm({ operatorId }: OperatorKbUploadFormProps) 
     const form = new FormData();
     form.append('file', file);
     form.append('operator_id', operatorId);
+    form.append('language', language);
 
     try {
       const res = await fetch('/api/operator-kb/upload', { method: 'POST', body: form });
@@ -63,6 +72,32 @@ export function OperatorKbUploadForm({ operatorId }: OperatorKbUploadFormProps) 
 
   return (
     <div className="space-y-3">
+      {/* Language selector */}
+      <div className="flex items-center gap-3">
+        <label
+          htmlFor="op-kb-language"
+          className="shrink-0 text-sm font-medium text-foreground"
+        >
+          Language
+        </label>
+        <select
+          id="op-kb-language"
+          value={language}
+          onChange={(e) => setLanguage(e.target.value as typeof language)}
+          disabled={uploading}
+          className="rounded-md border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+        >
+          {LANGUAGE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-muted-foreground">
+          &ldquo;All languages&rdquo; makes sections available to every conversation.
+        </p>
+      </div>
+
       {/* Drop zone */}
       <div
         role="button"

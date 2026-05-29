@@ -5,6 +5,34 @@ import { createServerClient } from '@/lib/supabase/server';
 import { resolveActiveOperatorId } from '@/lib/get-active-operator';
 import { Button } from '@/components/ui/button';
 
+function EventStatusBadge({ status, startDate }: { status: string; startDate: string }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const isPast = startDate < today;
+
+  if (status === 'live') {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+        Live
+      </span>
+    );
+  }
+  if (isPast || status === 'closed' || status === 'archived') {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
+        <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />
+        Ended
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+      Draft
+    </span>
+  );
+}
+
 export default async function EventsPage() {
   const supabase = createServerClient();
 
@@ -70,9 +98,7 @@ export default async function EventsPage() {
                   {event.event_type} · {event.venue_city} · {event.start_date}
                 </p>
               </div>
-              <span className="rounded-full border px-2 py-0.5 text-xs capitalize">
-                {event.status}
-              </span>
+              <EventStatusBadge status={event.status} startDate={event.start_date} />
             </Link>
           ))}
         </div>

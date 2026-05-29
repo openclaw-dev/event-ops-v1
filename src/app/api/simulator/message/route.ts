@@ -16,6 +16,7 @@ import type {
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createServerClient } from '@/lib/supabase/server';
 import type { EventConfig } from '@/lib/types';
+import { notifyEscalationContacts } from '@/lib/agent/escalation-notifier';
 
 const MAX_MESSAGE_CHARS = 4000;
 
@@ -125,7 +126,7 @@ export async function POST(request: Request) {
 
   const { data: event, error: eventError } = await supabase
     .from('events')
-    .select('id, operator_id, config')
+    .select('id, operator_id, config, timezone')
     .eq('id', eventId)
     .is('deleted_at', null)
     .single();
@@ -134,7 +135,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Event not found or access denied.' }, { status: 404 });
   }
 
-  const eventConfig = event.config as EventConfig;
+  const eventConfig: EventConfig = {
+    ...(event.config as EventConfig),
+    timezone: event.timezone as string | undefined,
+  };
 
   // ── 3. Resolve or create the conversation ────────────────────────────────
   let conversationId: string;
@@ -252,6 +256,7 @@ export async function POST(request: Request) {
     text: result.reply_text,
     classified_intent: result.classified_intent,
     cited_section_ids: result.cited_section_ids.length > 0 ? result.cited_section_ids : null,
+    source_section: result.source_section ?? null,
   });
 
   // ── 9. Update conversation state ─────────────────────────────────────────
@@ -278,13 +283,30 @@ export async function POST(request: Request) {
 
   // ── 10. Open an escalation row if escalated ──────────────────────────────
   if (result.escalation) {
-    await supabase.from('escalations').insert({
-      conversation_id: conversationId,
-      event_id: eventId,
-      reason: result.escalation.reason,
-      priority: result.escalation.priority,
-      summary_for_ops: result.escalation.summary_for_ops,
-    });
+    const { data: newEscalation } = await supabase
+      .from('escalations')
+      .insert({
+        conversation_id: conversationId,
+        event_id: eventId,
+        reason: result.escalation.reason,
+        priority: result.escalation.priority,
+        summary_for_ops: result.escalation.summary_for_ops,
+      })
+      .select('id')
+      .single();
+
+    // Notify escalation contacts via WhatsApp (best-effort, non-fatal).
+    try {
+      await notifyEscalationContacts({
+        event: { ...event },
+        escalation_id: newEscalation?.id ?? 'unknown',
+        customer_phone: simPhone,
+        trigger_message: message,
+        intent: result.classified_intent ?? result.escalation.reason,
+      });
+    } catch (notifyErr) {
+      console.warn('[simulator] escalation notification failed (non-fatal):', notifyErr);
+    }
   }
 
   // ── 11. Audit (admin client — RLS forbids user INSERT on audit_log) ──────

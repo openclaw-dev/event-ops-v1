@@ -2,15 +2,18 @@
  * KB retrieval for the agent runtime.
  *
  * Strategy:
- *   1. Fetch event-specific sections (kb_sections WHERE event_id = X).
- *   2. Fetch operator-level sections (operator_kb_sections WHERE operator_id = Y)
- *      when operatorId is supplied — uses admin client to bypass RLS in the
- *      agent runtime path where only the user-scoped client is available.
+ *   1. Fetch event-specific sections filtered by language:
+ *        • always include language = 'all'   (universal content)
+ *        • always include language = 'en'    (backward compat — all pre-migration rows)
+ *        • include language = detectedLang   (if different from 'en')
+ *   2. Fetch operator-level sections (operator_kb_sections) with the same
+ *      language filter using the admin client (no user session in agent runtime).
  *   3. Merge: event sections take precedence over operator sections on
  *      section_id conflict, so event-specific overrides always win.
+ *      Within the same source, language-specific beats 'en' beats 'all'.
  *   4. Score the merged set: intent match (boost) + keyword overlap.
- *   5. FTS fallback — when intent match yields zero from event rows, fall back
- *      to intent-only on event rows (operator rows have no intent field).
+ *   5. FTS fallback — when scoring yields zero results and an intent was
+ *      provided, fall back to intent-only matches on event rows.
  *
  * RLS applies to the user-scoped event-KB read; admin client is used only for
  * the operator-KB query where session context is absent.
@@ -22,7 +25,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import type { Language, RetrievedKBSection } from './types';
 
 const SELECT_COLUMNS =
-  'section_id, category, intent, escalation_needed, question_en, answer_en, question_ar, answer_ar';
+  'section_id, category, intent, escalation_needed, question_en, answer_en, question_ar, answer_ar, language';
 
 interface SelectedKBRow {
   section_id: string;
@@ -33,6 +36,7 @@ interface SelectedKBRow {
   answer_en: string;
   question_ar: string | null;
   answer_ar: string | null;
+  language: string;
 }
 
 function rowToSection(
@@ -64,12 +68,8 @@ const STOPWORDS_EN = new Set([
 
 /**
  * Tokenize a message into search terms (lowercase, ≥3 chars, non-stopword).
- * Falls back to substring matching for very short queries.
  */
 function tokenize(text: string): string[] {
-  // Replace anything that isn't a letter/digit/whitespace with a space.
-  // Uses ASCII+Latin1+Arabic+Cyrillic ranges instead of \p{L}\p{N} so we
-  // don't depend on the unicode-property-escape flag (target=es3 default).
   return text
     .toLowerCase()
     .replace(/[^a-z0-9À-ɏ؀-ۿЀ-ӿ\s]+/g, ' ')
@@ -79,7 +79,6 @@ function tokenize(text: string): string[] {
 
 /**
  * Score a section against a tokenized query.
- * Counts how many query tokens appear anywhere in the section's text fields.
  */
 function scoreSection(row: SelectedKBRow, tokens: string[], language: Language): number {
   if (tokens.length === 0) return 0;
@@ -96,12 +95,21 @@ function scoreSection(row: SelectedKBRow, tokens: string[], language: Language):
   let score = 0;
   for (const t of tokens) {
     if (haystackEn.includes(t)) score += 2;
-    // For Arabic / mixed messages also try matching against AR fields.
     if ((language === 'ar' || language === 'mixed') && haystackAr.includes(t)) {
       score += 2;
     }
   }
   return score;
+}
+
+/**
+ * Language priority for merge tie-breaking.
+ *   detectedLang (2) > 'en' fallback (1) > 'all' universal (0)
+ */
+function langPriority(lang: string, detectedLang: string): number {
+  if (lang === detectedLang) return 2;
+  if (lang === 'en') return 1;
+  return 0;
 }
 
 export interface RetrievalOptions {
@@ -123,9 +131,10 @@ export interface RetrievalOptions {
 /**
  * Retrieve up to `limit` KB sections relevant to the message.
  *
- * Merges event-specific and operator-level KB sections, then ranks by
- * keyword score + intent-match boost. Event sections override operator
- * sections when the same section_id appears in both.
+ * Merges event-specific and operator-level KB sections, filtered by the
+ * conversation's detected language, then ranks by keyword score + intent-match
+ * boost. Event sections override operator sections when the same section_id
+ * appears in both.
  */
 export async function retrieveKB(
   supabase: SupabaseClient,
@@ -135,45 +144,80 @@ export async function retrieveKB(
   const limit = opts.limit ?? 3;
   const tokens = tokenize(opts.messageText);
 
-  // ── 1. Fetch event-specific KB sections ───────────────────────────────────
+  // Normalize mixed → en for language filtering (mixed can read English content).
+  const detectedLang = opts.language === 'mixed' ? 'en' : opts.language;
+
+  // Languages to fetch:
+  // • 'all'         — universal content served to every conversation
+  // • 'en'          — backward compat (all pre-0018 rows have language='en')
+  // • detectedLang  — language-specific content for this conversation
+  const fetchLanguages = Array.from(new Set(['all', 'en', detectedLang]));
+
+  // ── 1. Fetch event-specific KB sections (language-filtered) ───────────────
   const { data: eventData } = await supabase
     .from('kb_sections')
     .select(SELECT_COLUMNS)
-    .eq('event_id', eventId);
+    .eq('event_id', eventId)
+    .in('language', fetchLanguages);
 
   const eventRows = (eventData ?? []) as SelectedKBRow[];
 
-  // ── 2. Fetch operator-level KB sections ───────────────────────────────────
+  // ── 2. Fetch operator-level KB sections (language-filtered) ───────────────
   let operatorRows: SelectedKBRow[] = [];
   if (opts.operatorId) {
     const admin = createAdminClient();
     const { data: opData } = await admin
       .from('operator_kb_sections')
-      .select('section_id, title, content')
-      .eq('operator_id', opts.operatorId);
+      .select('section_id, title, content, language')
+      .eq('operator_id', opts.operatorId)
+      .in('language', fetchLanguages);
 
     // Map operator sections to the common SelectedKBRow shape.
     // title → question_en (provides searchable context), content → answer_en.
-    operatorRows = ((opData ?? []) as Array<{ section_id: string; title: string; content: string }>)
-      .map((r) => ({
-        section_id: r.section_id,
-        category: null,
-        intent: null,
-        escalation_needed: false,
-        question_en: r.title,
-        answer_en: r.content,
-        question_ar: null,
-        answer_ar: null,
-      }));
+    operatorRows = ((opData ?? []) as Array<{
+      section_id: string;
+      title: string;
+      content: string;
+      language: string;
+    }>).map((r) => ({
+      section_id: r.section_id,
+      category: null,
+      intent: null,
+      escalation_needed: false,
+      question_en: r.title,
+      answer_en: r.content,
+      question_ar: null,
+      answer_ar: null,
+      language: r.language,
+    }));
   }
 
-  // ── 3. Merge: event sections override operator sections on section_id conflict ──
+  // ── 3. Merge ──────────────────────────────────────────────────────────────
+  // Operator sections first, then event sections (event always overrides operator
+  // on section_id conflict). Within the same source, higher language priority wins.
   const merged = new Map<string, SelectedKBRow>();
+
   for (const row of operatorRows) {
-    merged.set(row.section_id, row);
+    const existing = merged.get(row.section_id);
+    if (
+      !existing ||
+      langPriority(row.language, detectedLang) > langPriority(existing.language, detectedLang)
+    ) {
+      merged.set(row.section_id, row);
+    }
   }
   for (const row of eventRows) {
-    merged.set(row.section_id, row);
+    const existing = merged.get(row.section_id);
+    // Event rows always beat operator rows; within event rows, prefer higher language priority.
+    if (
+      !existing ||
+      // The row came from an operator source (langPriority logic only applies within same source).
+      // Simplest rule: event rows always overwrite operator rows, regardless of language.
+      operatorRows.some((or) => or.section_id === row.section_id) ||
+      langPriority(row.language, detectedLang) >= langPriority(existing.language, detectedLang)
+    ) {
+      merged.set(row.section_id, row);
+    }
   }
 
   const rows = Array.from(merged.values());
@@ -186,7 +230,7 @@ export async function retrieveKB(
       const base = scoreSection(r, tokens, opts.language);
       const matchedIntent = opts.intent != null && r.intent === opts.intent;
       const score = base + (matchedIntent ? INTENT_BOOST : 0);
-      return { row: r, score, base, matchedIntent };
+      return { row: r, score, matchedIntent };
     })
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score)
@@ -196,12 +240,11 @@ export async function retrieveKB(
     );
 
   // ── 5. Fallback: intent-only from event rows ──────────────────────────────
-  // No keyword overlap at all → fall back to intent-only matches on event rows
-  // so the generator at least sees the right-category content.
-  // Operator rows are excluded from the intent fallback because they have
-  // no intent field and would never match.
+  // No keyword overlap at all → fall back to intent-only matches on event rows.
   if (scored.length === 0 && opts.intent) {
-    const intentRows = eventRows.filter((r) => r.intent === opts.intent).slice(0, limit);
+    const intentRows = eventRows
+      .filter((r) => r.intent === opts.intent)
+      .slice(0, limit);
     return intentRows.map((r) => rowToSection(r, 'intent_match'));
   }
 

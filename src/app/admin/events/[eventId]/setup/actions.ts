@@ -104,6 +104,43 @@ export async function updateEvent(
  * Only the operator that owns the event can publish it (RLS-enforced).
  * Returns `{ error: string }` on failure; `undefined` on success.
  */
+export async function endEvent(
+  eventId: string,
+): Promise<{ error: string } | undefined> {
+  const supabase = createServerClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated.' };
+
+  const { data: event, error: updateError } = await supabase
+    .from('events')
+    .update({ status: 'draft', updated_at: new Date().toISOString() })
+    .eq('id', eventId)
+    .select('operator_id')
+    .single();
+
+  if (updateError || !event) {
+    return { error: updateError?.message ?? 'Failed to end event.' };
+  }
+
+  const admin = createAdminClient();
+  await admin.from('audit_log').insert({
+    operator_id: (event as { operator_id: string }).operator_id,
+    event_id: eventId,
+    actor_type: 'user',
+    actor_id: user.id,
+    action: 'event.ended',
+    entity_type: 'event',
+    entity_id: eventId,
+    metadata: {},
+  });
+
+  revalidatePath(`/admin/events/${eventId}/setup`);
+  return undefined;
+}
+
 export async function publishEvent(
   eventId: string,
 ): Promise<{ error: string } | undefined> {

@@ -8,9 +8,11 @@ import { publishEvent } from '../actions';
 
 interface PublishButtonProps {
   eventId: string;
+  /** When false, the button is disabled and a tooltip explains why. Default: true. */
+  canPublish?: boolean;
 }
 
-export function PublishButton({ eventId }: PublishButtonProps) {
+export function PublishButton({ eventId, canPublish = true }: PublishButtonProps) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -27,19 +29,24 @@ export function PublishButton({ eventId }: PublishButtonProps) {
 
   return (
     <div className="space-y-2">
-      <Button
-        onClick={handlePublish}
-        disabled={isPending}
-        className="gap-2 bg-green-600 hover:bg-green-700 text-white"
-        size="sm"
+      <span
+        title={!canPublish ? 'Complete required items first' : undefined}
+        className="inline-block"
       >
-        {isPending ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <Radio className="h-3.5 w-3.5" />
-        )}
-        Publish event
-      </Button>
+        <Button
+          onClick={handlePublish}
+          disabled={isPending || !canPublish}
+          className="gap-2 bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+          size="sm"
+        >
+          {isPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Radio className="h-3.5 w-3.5" />
+          )}
+          Publish event
+        </Button>
+      </span>
 
       {error && (
         <p className="text-sm text-destructive">{error}</p>

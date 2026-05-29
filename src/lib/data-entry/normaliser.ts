@@ -27,6 +27,7 @@ import { createHash } from 'node:crypto';
 import * as XLSX from 'xlsx';
 import { claude } from '@/lib/agent/anthropic-client';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { trackUsage } from '@/lib/billing/track-usage';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -257,7 +258,12 @@ function extractSheetSamples(buf: Buffer): {
 
 // ─── Haiku call ───────────────────────────────────────────────────────────────
 
-async function callHaikuForMappings(samples: SheetSample[]): Promise<HaikuResponse> {
+interface HaikuMappingResult {
+  response: HaikuResponse;
+  usage: { input_tokens: number; output_tokens: number; cache_read_tokens: number };
+}
+
+async function callHaikuForMappings(samples: SheetSample[]): Promise<HaikuMappingResult> {
   const systemPrompt = `You are a data mapping assistant. Your job is to map event data to standard field names.
 
 Valid target field keypaths — use ONLY these exact strings, no others:
@@ -308,7 +314,15 @@ Response format (strict JSON):
   });
 
   const text = msg.content[0]?.type === 'text' ? msg.content[0].text : '';
-  return parseHaikuJson(text);
+  return {
+    response: parseHaikuJson(text),
+    usage: {
+      input_tokens: msg.usage.input_tokens,
+      output_tokens: msg.usage.output_tokens,
+      cache_read_tokens:
+        ((msg.usage as unknown) as Record<string, unknown>).cache_read_input_tokens as number ?? 0,
+    },
+  };
 }
 
 function parseHaikuJson(raw: string): HaikuResponse {
@@ -491,7 +505,20 @@ export async function normaliseSheet(buf: Buffer, operatorId?: string): Promise<
   // ── Haiku inference ───────────────────────────────────────────────────────
   let haikuResponse: HaikuResponse;
   try {
-    haikuResponse = await callHaikuForMappings(samples);
+    const mappingResult = await callHaikuForMappings(samples);
+    haikuResponse = mappingResult.response;
+
+    // Fire-and-forget usage tracking (non-blocking — never throws).
+    if (operatorId) {
+      void trackUsage({
+        operator_id: operatorId,
+        event_type: 'field_mapping',
+        model: 'claude-haiku-4-5',
+        input_tokens: mappingResult.usage.input_tokens,
+        output_tokens: mappingResult.usage.output_tokens,
+        cache_read_tokens: mappingResult.usage.cache_read_tokens,
+      });
+    }
   } catch (err) {
     console.error('[normaliser] Haiku call failed:', err);
     return {

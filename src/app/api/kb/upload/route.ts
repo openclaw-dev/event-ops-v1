@@ -51,6 +51,7 @@ export async function POST(request: Request) {
 
   const file = formData.get('file');
   const eventId = formData.get('event_id');
+  const languageRaw = formData.get('language');
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: 'No file provided.' }, { status: 400 });
@@ -58,6 +59,12 @@ export async function POST(request: Request) {
   if (typeof eventId !== 'string' || !eventId) {
     return NextResponse.json({ error: 'event_id is required.' }, { status: 400 });
   }
+
+  const VALID_LANGUAGES = new Set(['en', 'ar', 'ru', 'all']);
+  const language =
+    typeof languageRaw === 'string' && VALID_LANGUAGES.has(languageRaw)
+      ? languageRaw
+      : 'en';
 
   // ── 2. Validate file ─────────────────────────────────────────────────────
   if (file.size > MAX_BYTES) {
@@ -157,16 +164,21 @@ export async function POST(request: Request) {
 
   // ── 6. Parse content ─────────────────────────────────────────────────────
   let markdownText: string;
+  const converterTrackOpts = {
+    operator_id: event.operator_id as string,
+    event_id: eventId,
+  };
+
   if (format === 'xlsx') {
     try {
-      markdownText = await xlsxToMarkdown(fileBuffer);
+      markdownText = await xlsxToMarkdown(fileBuffer, converterTrackOpts);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return NextResponse.json({ error: `Could not parse file: ${msg}` }, { status: 422 });
     }
   } else if (format === 'docx') {
     try {
-      markdownText = await docxToMarkdown(fileBuffer);
+      markdownText = await docxToMarkdown(fileBuffer, converterTrackOpts);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return NextResponse.json({ error: `Could not parse file: ${msg}` }, { status: 422 });
@@ -198,6 +210,7 @@ export async function POST(request: Request) {
         question_ar: s.question_ar,
         answer_ar: s.answer_ar,
         sort_order: s.sort_order,
+        language,
       }));
 
       const { error: upsertError } = await supabase

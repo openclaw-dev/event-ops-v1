@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { AlertTriangle } from 'lucide-react';
 
 import { createServerClient } from '@/lib/supabase/server';
 import { resolveActiveOperatorId } from '@/lib/get-active-operator';
@@ -41,6 +42,15 @@ export default async function WhatsAppSettingsPage() {
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8 px-8 py-8">
+      {/* Token expiry reminder */}
+      <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+        <p>
+          Remember to regenerate your Meta access token if messages stop arriving. Tokens expire
+          every 24 hours in development mode.
+        </p>
+      </div>
+
       {/* Header */}
       <div>
         <h2 className="text-base font-semibold">WhatsApp Integration</h2>

@@ -31,6 +31,8 @@ export interface EventConfig {
   event_id: string;
   event_name: string;
   event_date_iso: string;
+  /** IANA timezone string, e.g. 'Asia/Dubai'. Top-level events.timezone injected at runtime. */
+  timezone?: string;
   refund_policy: RefundPolicy;
   escalation_keywords: string[];
   vip_orders_always_escalate: boolean;
@@ -40,7 +42,7 @@ export interface EventConfig {
   doors_close_local: string;
   last_entry_local: string;
   parking_info: string;
-  escalation_contacts: { name: string; hours: string; method: string }[];
+  escalation_contacts: { name: string; hours: string; method: string; phone?: string }[];
   ticket_tiers: { name: string; price?: number; description?: string }[];
 }
 

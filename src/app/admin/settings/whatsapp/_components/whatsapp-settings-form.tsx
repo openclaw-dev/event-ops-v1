@@ -1,12 +1,18 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { CheckCircle2, Loader2 } from 'lucide-react';
+import { CheckCircle2, Loader2, Wifi, WifiOff } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { saveWhatsAppSettings } from '../../actions';
+
+type TestState =
+  | { status: 'idle' }
+  | { status: 'pending' }
+  | { status: 'ok'; display_name: string }
+  | { status: 'error'; message: string };
 
 interface WhatsAppSettingsFormProps {
   initialPhoneNumberId: string;
@@ -22,6 +28,29 @@ export function WhatsAppSettingsForm({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  const [testState, setTestState] = useState<TestState>({ status: 'idle' });
+  const [isTestPending, startTestTransition] = useTransition();
+
+  function handleTest() {
+    setTestState({ status: 'pending' });
+    startTestTransition(async () => {
+      try {
+        const res = await fetch('/api/whatsapp/test', { method: 'POST' });
+        const data = (await res.json()) as
+          | { status: 'ok'; display_name: string }
+          | { status: 'error'; message: string };
+
+        if (data.status === 'ok') {
+          setTestState({ status: 'ok', display_name: data.display_name });
+        } else {
+          setTestState({ status: 'error', message: data.message });
+        }
+      } catch {
+        setTestState({ status: 'error', message: 'Network error — could not reach the server.' });
+      }
+    });
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -96,6 +125,39 @@ export function WhatsAppSettingsForm({
             <CheckCircle2 className="h-4 w-4" />
             Saved
           </span>
+        )}
+      </div>
+
+      {/* Test connection */}
+      <div className="space-y-2 border-t pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isTestPending}
+          onClick={handleTest}
+          className="gap-2"
+        >
+          {isTestPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Wifi className="h-3.5 w-3.5" />
+          )}
+          Test connection
+        </Button>
+
+        {testState.status === 'ok' && (
+          <p className="flex items-center gap-1.5 text-sm text-emerald-600">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            Connected — {testState.display_name}
+          </p>
+        )}
+
+        {testState.status === 'error' && (
+          <p className="flex items-center gap-1.5 text-sm text-destructive">
+            <WifiOff className="h-4 w-4 shrink-0" />
+            Connection failed — {testState.message}
+          </p>
         )}
       </div>
     </form>

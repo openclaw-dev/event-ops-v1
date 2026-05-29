@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { type EventSetupFormData } from '@/lib/schemas';
 import { type EventConfig } from '@/lib/types';
 import { resolveActiveOperatorId } from '@/lib/get-active-operator';
+import { seedDemoEvent } from '@/lib/demo/seed-demo-event';
 
 /**
  * Create a new event under the active operator.
@@ -112,4 +113,31 @@ export async function createEvent(
   });
 
   redirect(`/admin/events/${event.id}/setup`);
+}
+
+/**
+ * Create a fully configured demo event and redirect to its Simulator.
+ * Calls seedDemoEvent() with the user's active operator ID.
+ */
+export async function createDemoEvent(): Promise<{ error: string } | undefined> {
+  const supabase = createServerClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated.' };
+
+  const { data: memberships } = await supabase
+    .from('operator_users')
+    .select('operator_id')
+    .eq('user_id', user.id);
+
+  const operatorId = resolveActiveOperatorId(
+    (memberships ?? []).map((m) => m.operator_id as string),
+  );
+  if (!operatorId) return { error: 'No operator found. Complete onboarding first.' };
+
+  const { event_id } = await seedDemoEvent(operatorId);
+
+  redirect(`/admin/events/${event_id}/simulator`);
 }

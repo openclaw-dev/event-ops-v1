@@ -129,6 +129,7 @@ export function EventSetupForm({
     control,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<EventSetupFormData>({
     resolver: zodResolver(eventSetupSchema),
@@ -613,15 +614,36 @@ export function EventSetupForm({
                   </div>
                   <div className="space-y-1">
                     {i === 0 && <Label className="text-xs text-muted-foreground">Method</Label>}
-                    <Input
-                      placeholder="in-app handoff"
-                      {...register(`escalation_contacts.${i}.method`)}
-                      aria-invalid={!!errors.escalation_contacts?.[i]?.method}
+                    <Controller
+                      control={control}
+                      name={`escalation_contacts.${i}.method`}
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger
+                            aria-invalid={!!errors.escalation_contacts?.[i]?.method}
+                            className="w-full"
+                          >
+                            <SelectValue placeholder="Select method" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="in-app handoff">In-app handoff</SelectItem>
+                            <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
                     />
                     {errors.escalation_contacts?.[i]?.method && (
                       <p className="text-xs text-destructive">
                         {errors.escalation_contacts[i].method?.message}
                       </p>
+                    )}
+                    {watch(`escalation_contacts.${i}.method`) === 'whatsapp' && (
+                      <Input
+                        placeholder="+971500000000"
+                        {...register(`escalation_contacts.${i}.phone`)}
+                        className="mt-1"
+                        aria-label="WhatsApp phone number"
+                      />
                     )}
                   </div>
                 </div>
@@ -643,7 +665,7 @@ export function EventSetupForm({
             variant="outline"
             size="sm"
             className="mt-1 text-xs"
-            onClick={() => appendContact({ name: '', hours: '', method: '' })}
+            onClick={() => appendContact({ name: '', hours: '', method: 'in-app handoff', phone: '' })}
           >
             <Plus className="mr-1 h-3 w-3" />
             Add contact

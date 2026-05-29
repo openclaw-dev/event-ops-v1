@@ -14,6 +14,7 @@ import * as XLSX from 'xlsx';
 import mammoth from 'mammoth';
 
 import { claude } from '@/lib/agent/anthropic-client';
+import { trackUsage } from '@/lib/billing/track-usage';
 
 const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 
@@ -35,7 +36,12 @@ function hasMarkdownHeadings(text: string): boolean {
 // Haiku normalisation pass — only called when content is unstructured
 // ---------------------------------------------------------------------------
 
-async function normaliseWithHaiku(rawText: string): Promise<string> {
+interface TrackOpts {
+  operator_id?: string;
+  event_id?: string;
+}
+
+async function normaliseWithHaiku(rawText: string, trackOpts?: TrackOpts): Promise<string> {
   const message = await claude.messages.create({
     model: HAIKU_MODEL,
     max_tokens: 2000,
@@ -52,6 +58,21 @@ async function normaliseWithHaiku(rawText: string): Promise<string> {
   if (!block || block.type !== 'text') {
     throw new Error('Unexpected response type from Haiku normalisation.');
   }
+
+  // Fire-and-forget usage tracking (non-blocking).
+  if (trackOpts?.operator_id) {
+    void trackUsage({
+      operator_id: trackOpts.operator_id,
+      event_id: trackOpts.event_id,
+      event_type: 'kb_conversion',
+      model: HAIKU_MODEL,
+      input_tokens: message.usage.input_tokens,
+      output_tokens: message.usage.output_tokens,
+      cache_read_tokens:
+        ((message.usage as unknown) as Record<string, unknown>).cache_read_input_tokens as number ?? 0,
+    });
+  }
+
   return block.text.trim();
 }
 
@@ -74,7 +95,7 @@ async function normaliseWithHaiku(rawText: string): Promise<string> {
  * If the resulting raw text already contains ## headings and bullet points,
  * Haiku is skipped.
  */
-export async function xlsxToMarkdown(buffer: Buffer): Promise<string> {
+export async function xlsxToMarkdown(buffer: Buffer, trackOpts?: TrackOpts): Promise<string> {
   const workbook = XLSX.read(buffer, { type: 'buffer' });
 
   const parts: string[] = [];
@@ -140,7 +161,7 @@ export async function xlsxToMarkdown(buffer: Buffer): Promise<string> {
     return raw;
   }
 
-  return normaliseWithHaiku(raw);
+  return normaliseWithHaiku(raw, trackOpts);
 }
 
 // ---------------------------------------------------------------------------
@@ -155,7 +176,7 @@ export async function xlsxToMarkdown(buffer: Buffer): Promise<string> {
  *
  * If the resulting markdown already contains ## headings, Haiku is skipped.
  */
-export async function docxToMarkdown(buffer: Buffer): Promise<string> {
+export async function docxToMarkdown(buffer: Buffer, trackOpts?: TrackOpts): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result = await (mammoth as any).convertToMarkdown({ buffer }) as {
     value: string;
@@ -180,5 +201,5 @@ export async function docxToMarkdown(buffer: Buffer): Promise<string> {
     return raw;
   }
 
-  return normaliseWithHaiku(raw);
+  return normaliseWithHaiku(raw, trackOpts);
 }

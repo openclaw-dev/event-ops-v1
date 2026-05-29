@@ -15,6 +15,7 @@ import {
   Users,
   BookOpen,
   MessageCircle,
+  BarChart2,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -28,6 +29,8 @@ interface Event {
   id: string;
   name: string;
   status: string;
+  start_date: string;
+  is_demo: boolean;
 }
 
 interface Operator {
@@ -44,6 +47,7 @@ interface SidebarProps {
 const SETTINGS_SUB_NAV = [
   { label: 'Knowledge Base', href: '/admin/settings/kb', icon: BookOpen },
   { label: 'WhatsApp', href: '/admin/settings/whatsapp', icon: MessageCircle },
+  { label: 'Usage & Billing', href: '/admin/settings/usage', icon: BarChart2 },
 ] as const;
 
 const EVENT_SUB_NAV = [
@@ -57,6 +61,20 @@ const EVENT_SUB_NAV = [
   { label: 'Sync', segment: 'sync', icon: RefreshCw, wip: false },
   { label: 'Promoters', segment: 'promoters', icon: Users, wip: false },
 ] as const;
+
+function EventStatusDot({ status, startDate }: { status: string; startDate: string }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const isPast = startDate < today;
+
+  if (status === 'live') {
+    return <span className="ml-auto flex h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />;
+  }
+  if (isPast || status === 'closed' || status === 'archived') {
+    return <span className="ml-auto flex h-1.5 w-1.5 shrink-0 rounded-full bg-gray-400" />;
+  }
+  // draft / any non-live future event
+  return <span className="ml-auto flex h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />;
+}
 
 function EventNavItem({ event }: { event: Event }) {
   const pathname = usePathname();
@@ -78,9 +96,12 @@ function EventNavItem({ event }: { event: Event }) {
           className={cn('h-3 w-3 shrink-0 transition-transform', isActive && 'rotate-90')}
         />
         <span className="truncate">{event.name}</span>
-        {event.status === 'live' && (
-          <span className="ml-auto flex h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />
+        {event.is_demo && (
+          <span className="ml-auto shrink-0 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">
+            Demo
+          </span>
         )}
+        {!event.is_demo && <EventStatusDot status={event.status} startDate={event.start_date} />}
       </Link>
 
       {isActive && (

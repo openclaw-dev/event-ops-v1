@@ -123,6 +123,12 @@ export interface GenerationOutput {
   requires_escalation: boolean;
   contains_policy_claim: boolean;
   confidence: number;               // 0-1
+  /** Internal: token counts from the Anthropic response, used for usage tracking. */
+  _usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_tokens: number;
+  };
 }
 
 // ─── Conversation snapshot (input to state machine) ─────────────────────────
@@ -154,6 +160,8 @@ export interface AgentTurnResult {
   classified_intent: Intent | null;
   cited_section_ids: string[];
   deflection_offer: AlternativeOffered | null;
+  /** Human-readable label for the primary KB section cited (question_en or section_id). */
+  source_section: string | null;
   escalation: {
     reason: string;
     priority: 'low' | 'normal' | 'high' | 'urgent';

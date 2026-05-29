@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import { UploadCloud, Pencil } from 'lucide-react';
+import { useState, useTransition } from 'react';
+import { UploadCloud, Pencil, Sparkles, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { EventCreateForm } from './event-create-form';
 import { MastersheetCreateFlow } from './mastersheet-create-flow';
+import { createDemoEvent } from '../actions';
 
 type View = 'choice' | 'manual' | 'mastersheet';
 
@@ -16,6 +17,8 @@ type View = 'choice' | 'manual' | 'mastersheet';
  */
 export function NewEventChoice() {
   const [view, setView] = useState<View>('choice');
+  const [demoError, setDemoError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   if (view === 'manual') {
     return <EventCreateForm onBack={() => setView('choice')} />;
@@ -23,6 +26,17 @@ export function NewEventChoice() {
 
   if (view === 'mastersheet') {
     return <MastersheetCreateFlow onBack={() => setView('choice')} />;
+  }
+
+  function handleCreateDemo() {
+    setDemoError(null);
+    startTransition(async () => {
+      const result = await createDemoEvent();
+      if (result?.error) {
+        setDemoError(result.error);
+      }
+      // On success, createDemoEvent() calls redirect() server-side → client navigates.
+    });
   }
 
   return (
@@ -66,6 +80,44 @@ export function NewEventChoice() {
             Fill in manually
           </Button>
         </div>
+      </div>
+
+      {/* Card: Create demo event — full width below */}
+      <div className="mt-4 flex flex-col items-start gap-4 rounded-xl border border-violet-200 bg-violet-50/50 p-6 shadow-sm transition-shadow hover:shadow-md">
+        <div className="flex w-full items-start gap-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-100">
+            <Sparkles className="h-5 w-5 text-violet-600" />
+          </div>
+          <div className="flex-1 space-y-1">
+            <h2 className="font-semibold text-violet-900">Create demo event</h2>
+            <p className="text-sm text-muted-foreground">
+              Instantly create a fully configured demo event with sample KB, 20 orders, and 5
+              conversations. Perfect for exploring the product.
+            </p>
+          </div>
+        </div>
+
+        <Button
+          className="w-full gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+          onClick={handleCreateDemo}
+          disabled={isPending}
+        >
+          {isPending ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Setting up your demo event…
+            </>
+          ) : (
+            <>
+              <Sparkles className="h-4 w-4" />
+              Create demo
+            </>
+          )}
+        </Button>
+
+        {demoError && (
+          <p className="text-sm text-destructive">{demoError}</p>
+        )}
       </div>
     </div>
   );

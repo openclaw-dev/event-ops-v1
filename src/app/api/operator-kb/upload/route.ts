@@ -45,6 +45,7 @@ export async function POST(request: Request) {
 
   const file = formData.get('file');
   const operatorId = formData.get('operator_id');
+  const languageRaw = formData.get('language');
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: 'No file provided.' }, { status: 400 });
@@ -52,6 +53,12 @@ export async function POST(request: Request) {
   if (typeof operatorId !== 'string' || !operatorId) {
     return NextResponse.json({ error: 'operator_id is required.' }, { status: 400 });
   }
+
+  const VALID_LANGUAGES = new Set(['en', 'ar', 'ru', 'all']);
+  const language =
+    typeof languageRaw === 'string' && VALID_LANGUAGES.has(languageRaw)
+      ? languageRaw
+      : 'en';
 
   // ── 2. Validate file ─────────────────────────────────────────────────────
   if (file.size > MAX_BYTES) {
@@ -109,6 +116,7 @@ export async function POST(request: Request) {
         title: s.question_en ?? s.section_id,
         content: s.answer_en,
         source_file: file.name,
+        language,
         updated_at: new Date().toISOString(),
       }));
 

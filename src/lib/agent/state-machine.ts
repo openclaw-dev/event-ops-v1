@@ -24,11 +24,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { EventConfig } from '@/lib/types';
+import { trackUsage } from '@/lib/billing/track-usage';
 
 import { classifyMessage } from './classifier';
 import { generateCitedReply } from './generator';
 import { retrieveKB } from './kb-retrieval';
 import { lookupOrder } from './order-lookup';
+import type { OrderLookupResult } from './order-lookup';
 import type {
   AgentState,
   AgentTurnResult,
@@ -84,6 +86,23 @@ function matchEscalationKeyword(
 }
 
 // ============================================================================
+// HEDGING LANGUAGE PATTERNS
+// ============================================================================
+
+const HEDGING_PATTERNS: RegExp[] = [
+  /i'?m not sure/i,
+  /\bi think\b/i,
+  /\bi believe\b/i,
+  /i'?m not certain/i,
+  /i'?m unsure/i,
+  /not entirely sure/i,
+];
+
+function containsHedgingLanguage(text: string): boolean {
+  return HEDGING_PATTERNS.some((p) => p.test(text));
+}
+
+// ============================================================================
 // PROMPT-INJECTION GUARD
 // ============================================================================
 
@@ -133,9 +152,44 @@ function escalationHandoffReply(language: ConversationSnapshot['language']): str
 
 function orderLookupRequestReply(language: ConversationSnapshot['language']): string {
   const en =
-    'To help with this, can you share your order ID (e.g. ORD-001234) or the phone number used at checkout?';
+    'To help with this, can you share your order ID (e.g. ORD-001234), ' +
+    'the phone number used at checkout, your name, or your email address?';
   const ar =
-    'للمساعدة في هذا الأمر، هل يمكنك مشاركة رقم الطلب أو رقم الهاتف المستخدم عند الشراء؟';
+    'للمساعدة في هذا الأمر، هل يمكنك مشاركة رقم الطلب، أو رقم الهاتف المستخدم عند الشراء، أو اسمك، أو بريدك الإلكتروني؟';
+  return language === 'ar' ? ar : en;
+}
+
+/**
+ * Reply when multiple orders match a name or email — asks the customer to
+ * clarify by sharing their full order ID or the last 4 digits of one of
+ * the matching order IDs.
+ */
+function ambiguousOrderReply(
+  orders: OrderContext[],
+  language: ConversationSnapshot['language'],
+): string {
+  const n = orders.length;
+  const endings = orders.slice(0, 3).map((o) => {
+    const id = o.order_id;
+    return id.length > 4 ? `…${id.slice(-4)}` : id;
+  });
+
+  if (n === 2) {
+    const ar =
+      `وجدت ${n} طلبات مطابقة. أيٌّ منها طلبك — الطلب المنتهي بـ ${endings[0]} أم ${endings[1]}؟ ` +
+      'يمكنك أيضاً مشاركة رقم الطلب الكامل.';
+    const en =
+      `I found ${n} orders matching that. Which one is yours — the order ending in ` +
+      `${endings[0]} or ${endings[1]}? You can also share your full order ID.`;
+    return language === 'ar' ? ar : en;
+  }
+
+  // 3+ matches — just ask for the full ID
+  const ar =
+    `وجدت ${n} طلبات مطابقة. هل يمكنك مشاركة رقم الطلب الكامل لأتمكن من العثور على طلبك الصحيح؟`;
+  const en =
+    `I found ${n} orders matching that. Could you share your full order ID ` +
+    `so I can locate the right one?`;
   return language === 'ar' ? ar : en;
 }
 
@@ -174,6 +228,7 @@ function escalateResult(
     classified_intent: classification?.intent ?? null,
     cited_section_ids: [],
     deflection_offer: null,
+    source_section: null,
     escalation: buildEscalation(reason, priority, summary),
     classification,
   };
@@ -222,6 +277,19 @@ async function generateWithGuardrails(
     history: input.snapshot.message_history,
   });
 
+  // Fire-and-forget usage tracking (non-blocking — never throws).
+  if (gen._usage) {
+    void trackUsage({
+      operator_id: input.operatorId,
+      event_id: input.snapshot.event_id,
+      event_type: 'support_message',
+      model: 'claude-sonnet-4-6',
+      input_tokens: gen._usage.input_tokens,
+      output_tokens: gen._usage.output_tokens,
+      cache_read_tokens: gen._usage.cache_read_tokens,
+    });
+  }
+
   // Guardrail 8 (from generator system prompt): the model itself flagged escalation.
   if (gen.requires_escalation) {
     return escalateResult(
@@ -261,6 +329,19 @@ async function generateWithGuardrails(
     );
   }
 
+  // Guardrail 7: hedging language signals low confidence — escalate.
+  if (containsHedgingLanguage(gen.response_text)) {
+    return escalateResult(
+      input.snapshot,
+      'hedging_language_detected',
+      'normal',
+      `Generator reply contains hedging language for intent=${classification.intent}. ` +
+        `Reply: ${gen.response_text.slice(0, 200)}`,
+      classification,
+      order,
+    );
+  }
+
   // Empty reply with no citations and no explicit escalation flag — still unsafe.
   if (gen.response_text.trim().length === 0) {
     return escalateResult(
@@ -273,6 +354,15 @@ async function generateWithGuardrails(
     );
   }
 
+  // Derive primary source label from the first cited KB section.
+  const primaryCited = gen.kb_sections_cited[0] ?? null;
+  const primarySection = primaryCited
+    ? kbSections.find((s) => s.section_id === primaryCited)
+    : null;
+  const source_section = primarySection
+    ? (primarySection.question_en ?? primaryCited)
+    : primaryCited;
+
   return {
     reply_text: gen.response_text,
     new_state: newState,
@@ -281,6 +371,7 @@ async function generateWithGuardrails(
     cited_section_ids: gen.kb_sections_cited,
     deflection_offer:
       (gen.deflection_offer as AgentTurnResult['deflection_offer']) ?? null,
+    source_section,
     escalation: null,
     classification,
   };
@@ -309,6 +400,7 @@ export async function runAgent(input: RunAgentInput): Promise<AgentTurnResult> {
       classified_intent: null,
       cited_section_ids: [],
       deflection_offer: null,
+      source_section: null,
       escalation: null,
       classification: null,
     };
@@ -403,12 +495,38 @@ export async function runAgent(input: RunAgentInput): Promise<AgentTurnResult> {
 
   // ---- Order lookup (explicit hint, prior session order, or session phone) ----
   const existingOrder = snapshot.matched_order;
-  const orderForTurn: OrderContext | null = existingOrder ?? (await lookupOrder(supabase, snapshot.event_id, {
-    messageText: message,
-    explicitOrderId: classification.mentioned_order_id,
-    explicitPhone: classification.mentioned_phone,
-    sessionPhone: snapshot.customer_phone_e164,
-  }));
+  let orderForTurn: OrderContext | null = existingOrder;
+
+  if (!existingOrder) {
+    const lookupResult: OrderLookupResult = await lookupOrder(
+      supabase,
+      snapshot.event_id,
+      {
+        messageText: message,
+        explicitOrderId: classification.mentioned_order_id,
+        explicitPhone: classification.mentioned_phone,
+        sessionPhone: snapshot.customer_phone_e164,
+      },
+    );
+
+    if (lookupResult.kind === 'single') {
+      orderForTurn = lookupResult.order;
+    } else if (lookupResult.kind === 'ambiguous') {
+      // Multiple orders matched a name or email — ask the customer to clarify.
+      return {
+        reply_text: ambiguousOrderReply(lookupResult.orders, classification.language),
+        new_state: 'order_lookup',
+        matched_order_id: null,
+        classified_intent: classification.intent,
+        cited_section_ids: [],
+        deflection_offer: null,
+        source_section: null,
+        escalation: null,
+        classification,
+      };
+    }
+    // 'not_found' → orderForTurn stays null
+  }
 
   // VIP escalation gate
   if (
@@ -455,6 +573,7 @@ export async function runAgent(input: RunAgentInput): Promise<AgentTurnResult> {
         classified_intent: classification.intent,
         cited_section_ids: [],
         deflection_offer: null,
+        source_section: null,
         escalation: null,
         classification,
       };
@@ -470,6 +589,7 @@ export async function runAgent(input: RunAgentInput): Promise<AgentTurnResult> {
       classified_intent: classification.intent,
       cited_section_ids: [],
       deflection_offer: null,
+      source_section: null,
       escalation: null,
       classification,
     };
@@ -489,6 +609,7 @@ export async function runAgent(input: RunAgentInput): Promise<AgentTurnResult> {
       classified_intent: classification.intent,
       cited_section_ids: [],
       deflection_offer: null,
+      source_section: null,
       escalation: null,
       classification,
     };

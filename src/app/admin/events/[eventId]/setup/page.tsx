@@ -4,6 +4,9 @@ import { createServerClient } from '@/lib/supabase/server';
 import { updateEvent } from './actions';
 import { EventSetupForm } from '../../_components/event-setup-form';
 import { PublishButton } from './_components/publish-button';
+import { EndEventButton } from './_components/end-event-button';
+import { ReadinessChecklist } from './_components/readiness-checklist';
+import { getEventReadiness } from '@/lib/agent/event-readiness';
 import { type EventSetupFormData } from '@/lib/schemas';
 import { type EventConfig } from '@/lib/types';
 
@@ -28,7 +31,7 @@ export default async function SetupPage({ params }: SetupPageProps) {
   const { data: event } = await supabase
     .from('events')
     .select(
-      'id, name, slug, event_type, start_date, end_date, timezone, venue_name, venue_city, capacity, age_minimum, config, status',
+      'id, name, slug, event_type, start_date, end_date, timezone, venue_name, venue_city, capacity, age_minimum, config, status, is_demo',
     )
     .eq('id', params.eventId)
     .is('deleted_at', null)
@@ -80,8 +83,14 @@ export default async function SetupPage({ params }: SetupPageProps) {
     escalation_keywords: config.escalation_keywords ?? [],
     escalation_contacts:
       config.escalation_contacts && config.escalation_contacts.length > 0
-        ? config.escalation_contacts
-        : [{ name: '', hours: '', method: '' }],
+        ? config.escalation_contacts.map((c) => ({
+            name: c.name,
+            hours: c.hours,
+            method: (c.method === 'whatsapp' ? 'whatsapp' : 'in-app handoff') as
+              'in-app handoff' | 'whatsapp',
+            phone: c.phone ?? '',
+          }))
+        : [{ name: '', hours: '', method: 'in-app handoff' as const, phone: '' }],
 
     ticket_tiers:
       config.ticket_tiers && config.ticket_tiers.length > 0
@@ -96,33 +105,69 @@ export default async function SetupPage({ params }: SetupPageProps) {
   }
 
   const eventStatus = (event as Record<string, unknown>).status as string;
+  const isDemo = (event as Record<string, unknown>).is_demo as boolean ?? false;
+  const today = new Date().toISOString().slice(0, 10);
+  const isPast = (event.start_date as string) < today;
+
+  // Fetch readiness only for draft events that haven't ended.
+  const isDraft = eventStatus === 'draft';
+  const readiness = isDraft && !isPast ? await getEventReadiness(params.eventId) : null;
 
   return (
     <div className="mx-auto w-full max-w-3xl px-8 py-8">
-      <div className="mb-8 flex items-start justify-between gap-4">
-        <div>
+      <div className="mb-6">
+        <div className="flex items-center gap-2">
           <h1 className="text-xl font-semibold">Event Setup</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Changes are saved immediately. The agent runtime reads this config on every conversation.
-          </p>
+          {isDemo && (
+            <span className="rounded bg-violet-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-violet-700">
+              Demo
+            </span>
+          )}
         </div>
-
-        {/* Publish button — only shown when the event is not live */}
-        {eventStatus !== 'live' ? (
-          <PublishButton eventId={params.eventId} />
-        ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-            Live
-          </span>
-        )}
+        <p className="mt-1 text-sm text-muted-foreground">
+          Changes are saved immediately. The agent runtime reads this config on every conversation.
+        </p>
       </div>
+
+      {/* ── Status banner ──────────────────────────────────────────────────── */}
+      {isPast ? (
+        <div className="mb-6 flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-gray-400" />
+          <p className="text-sm text-gray-600">This event has ended.</p>
+        </div>
+      ) : eventStatus === 'live' ? (
+        <div className="mb-6 flex items-center justify-between gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
+            <p className="text-sm text-green-700 font-medium">
+              Event is live. Support agent is active.
+            </p>
+          </div>
+          <EndEventButton eventId={params.eventId} />
+        </div>
+      ) : (
+        <div className="mb-6 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+            <p className="text-sm text-amber-700">
+              This event is not published. Customers cannot reach the support agent.
+            </p>
+          </div>
+          <PublishButton
+            eventId={params.eventId}
+            canPublish={readiness?.can_publish ?? true}
+          />
+        </div>
+      )}
 
       <EventSetupForm
         defaultValues={defaultValues}
         onSubmit={handleUpdate}
         submitLabel="Save event"
       />
+
+      {/* ── Readiness checklist — draft, non-past events only ─────────────── */}
+      {readiness && <ReadinessChecklist result={readiness} />}
     </div>
   );
 }
