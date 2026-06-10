@@ -148,8 +148,16 @@ export async function propagateToKB(
 
     if (sentences.length === 0) continue;
 
-    const appendText = '\n\n[Updated] ' + sentences.join('; ');
-    const newAnswer = (existing.answer_en ?? '') + appendText;
+    // Strip any existing [Updated …] lines before prepending a fresh one.
+    const baseAnswer = (existing.answer_en ?? '')
+      .split('\n')
+      .filter((line: string) => !line.startsWith('[Updated'))
+      .join('\n')
+      .trimEnd();
+
+    const updateDate = new Date().toLocaleDateString('en-GB');
+    const updateLine = `[Updated ${updateDate}] ${sentences.join('; ')}`;
+    const newAnswer = `${baseAnswer}\n\n${updateLine}`;
     const newVersion = (typeof existing.version === 'number' ? existing.version : 0) + 1;
 
     const { error: updateError } = await admin

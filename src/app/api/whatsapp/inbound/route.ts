@@ -114,6 +114,43 @@ function buildEventSelectionPrompt(
   return `Which event are you asking about?\n\n${lines}`;
 }
 
+function parseEventSelection(
+  text: string,
+  events: Array<{ id: string; name: string }>,
+): number | null {
+  const trimmed = text.trim();
+
+  // Western digits
+  const western = parseInt(trimmed, 10);
+  if (!isNaN(western) && western >= 1 && western <= events.length) return western - 1;
+
+  // Arabic-Indic digits ١٢٣٤٥٦٧٨٩٠
+  const arabicMap: Record<string, string> = {
+    '١': '1', '٢': '2', '٣': '3', '٤': '4', '٥': '5',
+    '٦': '6', '٧': '7', '٨': '8', '٩': '9', '٠': '0',
+  };
+  const converted = trimmed.replace(/[٠-٩]/g, (d) => arabicMap[d] ?? d);
+  const arabic = parseInt(converted, 10);
+  if (!isNaN(arabic) && arabic >= 1 && arabic <= events.length) return arabic - 1;
+
+  // Emoji digits 1️⃣ 2️⃣ etc.
+  const emojiMap: Record<string, number> = {
+    '1️⃣': 0, '2️⃣': 1, '3️⃣': 2, '4️⃣': 3, '5️⃣': 4,
+  };
+  if (emojiMap[trimmed] !== undefined) return emojiMap[trimmed]!;
+
+  // Fuzzy name match
+  const lowerText = trimmed.toLowerCase();
+  const nameMatch = events.findIndex(
+    (e) =>
+      e.name.toLowerCase().includes(lowerText) ||
+      lowerText.includes(e.name.toLowerCase().split(' ')[0]!.toLowerCase()),
+  );
+  if (nameMatch !== -1) return nameMatch;
+
+  return null;
+}
+
 // ─── Customer support flow ────────────────────────────────────────────────────
 
 async function handleCustomerSupportMessage(
@@ -139,9 +176,9 @@ async function handleCustomerSupportMessage(
   const pending = await getPendingEventSelection(phone);
 
   if (pending) {
-    const num = parseInt(message.text.trim(), 10);
-    if (!isNaN(num) && num >= 1 && num <= pending.length) {
-      const chosen = pending[num - 1];
+    const idx = parseEventSelection(message.text, pending);
+    if (idx !== null) {
+      const chosen = pending[idx];
       if (chosen) {
         await clearPendingEventSelection(phone);
         resolvedEventId = chosen.id;
@@ -157,6 +194,7 @@ async function handleCustomerSupportMessage(
   }
 
   // Step 3: Resolve event if not already set from pending selection.
+  let eventRecentlyEnded = false;
   if (!resolvedEventId) {
     const routeResult = await resolveEventForOperator(operator.operator_id);
 
@@ -178,6 +216,7 @@ async function handleCustomerSupportMessage(
     }
 
     resolvedEventId = routeResult.event_id;
+    eventRecentlyEnded = routeResult.recently_ended;
   }
 
   // Step 4: Get or create the customer conversation.
@@ -204,6 +243,7 @@ async function handleCustomerSupportMessage(
   const eventConfig: EventConfig = {
     ...(rawEventRow.config as EventConfig),
     timezone: rawEventRow.timezone as string | undefined,
+    event_recently_ended: eventRecentlyEnded,
   };
 
   // Step 6: Hydrate matched order if conversation has one.

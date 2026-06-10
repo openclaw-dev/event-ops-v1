@@ -54,13 +54,13 @@ export function EndEventButton({ eventId }: EndEventButtonProps) {
             ) : (
               <Square className="h-3.5 w-3.5" />
             )}
-            End event
+            Unpublish event
           </Button>
         </AlertDialogTrigger>
 
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>End this event?</AlertDialogTitle>
+            <AlertDialogTitle>Unpublish this event?</AlertDialogTitle>
             <AlertDialogDescription>
               The support agent will stop serving customers immediately. This
               cannot be undone without republishing.
@@ -80,10 +80,10 @@ export function EndEventButton({ eventId }: EndEventButtonProps) {
               {isPending ? (
                 <>
                   <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                  Ending…
+                  Unpublishing…
                 </>
               ) : (
-                'End event'
+                'Unpublish event'
               )}
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -131,7 +131,7 @@ export async function endEvent(
     event_id: eventId,
     actor_type: 'user',
     actor_id: user.id,
-    action: 'event.ended',
+    action: 'event.unpublished',
     entity_type: 'event',
     entity_id: eventId,
     metadata: {},

@@ -35,14 +35,7 @@ const STATE_COLORS: Record<string, string> = {
   session_closed:       'bg-zinc-100 text-zinc-700 border-zinc-200',
 };
 
-// Maps the user-friendly intent filter value to one or more conversation states.
-const INTENT_TO_STATES: Record<string, string[]> = {
-  faq:       ['faq_answer'],
-  order:     ['order_lookup'],
-  refund:    ['refund_deflection'],
-  escalation:['escalation_triggered'],
-  other:     ['greeting', 'session_closed', 'START', 'INTAKE'],
-};
+import { INTENT_TO_STATES } from '@/lib/agent/intent-labels';
 
 /** Returns the ISO timestamp corresponding to the start of the chosen range. */
 function getRangeSince(range: string): string | null {

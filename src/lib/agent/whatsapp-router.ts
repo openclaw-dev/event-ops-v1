@@ -13,7 +13,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type EventRouteResult =
-  | { type: 'single'; event_id: string; event: Record<string, unknown> }
+  | { type: 'single'; event_id: string; event: Record<string, unknown>; recently_ended: boolean }
   | { type: 'multiple'; events: Array<{ id: string; name: string }> }
   | { type: 'none' };
 
@@ -62,14 +62,15 @@ export async function resolveEventForOperator(
 ): Promise<EventRouteResult> {
   const admin = createAdminClient();
 
+  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString().split('T')[0];
+
   const { data } = await admin
     .from('events')
-    .select('id, name, start_date, config')
+    .select('id, name, start_date, end_date, status, config')
     .eq('operator_id', operatorId)
-    .eq('status', 'live')
-    // Include events that started up to 12 hours ago so attendees can still
-    // ask questions after doors open.
-    .gte('start_date', new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString().split('T')[0])
+    // Include live events, and draft events ended within the last 48 hours for post-event support.
+    .or(`status.eq.live,and(status.eq.draft,end_date.gte.${cutoff})`)
+    .gte('start_date', cutoff)
     .is('deleted_at', null)
     .order('start_date', { ascending: true })
     .limit(5);
@@ -78,6 +79,8 @@ export async function resolveEventForOperator(
     id: string;
     name: string;
     start_date: string;
+    end_date: string | null;
+    status: string;
     config: Record<string, unknown>;
   }>;
 
@@ -85,10 +88,12 @@ export async function resolveEventForOperator(
 
   if (events.length === 1) {
     const ev = events[0]!;
+    const recently_ended = ev.status === 'draft';
     return {
       type: 'single',
       event_id: ev.id,
       event: ev as Record<string, unknown>,
+      recently_ended,
     };
   }
 

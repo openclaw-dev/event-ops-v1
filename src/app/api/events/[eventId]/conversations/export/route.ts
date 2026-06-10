@@ -17,13 +17,7 @@ const STATE_TO_INTENT: Record<string, string> = {
   INTAKE:               'Other',
 };
 
-const INTENT_TO_STATES: Record<string, string[]> = {
-  faq:       ['faq_answer'],
-  order:     ['order_lookup'],
-  refund:    ['refund_deflection'],
-  escalation:['escalation_triggered'],
-  other:     ['greeting', 'session_closed', 'START', 'INTAKE'],
-};
+import { INTENT_TO_STATES } from '@/lib/agent/intent-labels';
 
 function getRangeSince(range: string): string | null {
   if (range === 'today') {

@@ -282,37 +282,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     datoResult = { success: false, error: 'DatoCMS sync threw an exception' };
   }
 
-  // ── 9. Upsert mastersheet_mappings ───────────────────────────────────────
-  try {
-    const fieldMap: Record<string, string> = {};
-    const confidenceScores: Record<string, number> = {};
-
-    for (const m of mappings) {
-      fieldMap[m.source_column] = m.target_field;
-      confidenceScores[m.source_column] = m.confidence;
-    }
-
-    const sourceColumns = Array.from(new Set(mappings.map((m) => m.source_column)));
-
-    await admin
-      .from('mastersheet_mappings')
-      .upsert(
-        {
-          operator_id: event.operator_id,
-          mapping_name: 'default',
-          source_columns: sourceColumns,
-          field_map: fieldMap,
-          confidence_scores: confidenceScores,
-          last_used_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'operator_id,mapping_name' },
-      );
-  } catch {
-    // Non-fatal — best-effort persistence of mapping metadata.
-  }
-
-  // ── 10. Return ────────────────────────────────────────────────────────────
+  // ── 9. Return ─────────────────────────────────────────────────────────────
   return NextResponse.json({
     success: true,
     change_event_id: changeEventId,

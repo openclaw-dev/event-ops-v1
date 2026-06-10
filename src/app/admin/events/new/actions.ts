@@ -137,7 +137,7 @@ export async function createDemoEvent(): Promise<{ error: string } | undefined> 
   );
   if (!operatorId) return { error: 'No operator found. Complete onboarding first.' };
 
-  const { event_id } = await seedDemoEvent(operatorId);
+  const { event_id } = await seedDemoEvent(operatorId, user.id);
 
   redirect(`/admin/events/${event_id}/simulator`);
 }

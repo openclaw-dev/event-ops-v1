@@ -152,7 +152,7 @@ const KB_SECTIONS = [
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
-export async function seedDemoEvent(operatorId: string): Promise<SeedDemoResult> {
+export async function seedDemoEvent(operatorId: string, userId?: string): Promise<SeedDemoResult> {
   const admin = createAdminClient();
 
   // ── 1. Compute event dates ─────────────────────────────────────────────────
@@ -499,7 +499,7 @@ export async function seedDemoEvent(operatorId: string): Promise<SeedDemoResult>
     operator_id: operatorId,
     event_id: eventId,
     actor_type: 'user',
-    actor_id: operatorId, // best-effort — no user session in this context
+    actor_id: userId ?? null,
     action: 'demo.seeded',
     entity_type: 'event',
     entity_id: eventId,

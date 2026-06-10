@@ -44,6 +44,8 @@ export interface EventConfig {
   parking_info: string;
   escalation_contacts: { name: string; hours: string; method: string; phone?: string }[];
   ticket_tiers: { name: string; price?: number; description?: string }[];
+  /** Set at runtime when the event has recently ended (within 48 hours). */
+  event_recently_ended?: boolean;
 }
 
 // ─── Domain objects ───────────────────────────────────────────────────────────

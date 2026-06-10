@@ -138,6 +138,12 @@ export function extractName(text: string): string | null {
   return null;
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function escapeLike(value: string): string {
+  return value.replace(/[%_\\]/g, '\\$&');
+}
+
 // ─── Main lookup ──────────────────────────────────────────────────────────────
 
 /**
@@ -236,7 +242,7 @@ export async function lookupOrder(
       .from('orders')
       .select(SELECT_COLUMNS)
       .eq('event_id', eventId)
-      .ilike('customer_name', `%${nameHint}%`)
+      .ilike('customer_name', `%${escapeLike(nameHint)}%`)
       .order('created_at', { ascending: false })
       .limit(5);
 

@@ -45,6 +45,28 @@ const RESULT_COLORS: Record<ScanResult, string> = {
   invalid: 'bg-zinc-500',
 };
 
+// ─── Camera error helper ──────────────────────────────────────────────────────
+
+function getCameraErrorMessage(err: unknown): string {
+  if (err instanceof DOMException) {
+    switch (err.name) {
+      case 'NotAllowedError':
+        return 'Camera permission denied. Go to your browser settings and allow camera access for this site.';
+      case 'NotFoundError':
+        return 'No camera found on this device.';
+      case 'NotReadableError':
+        return 'Camera is in use by another app. Close other apps using the camera and try again.';
+      case 'OverconstrainedError':
+        return 'Rear camera not available. Try switching to front camera.';
+      case 'SecurityError':
+        return `Camera access requires HTTPS. Make sure you are using ${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://tazkar.co'}`;
+      default:
+        return `Camera error: ${err.message}`;
+    }
+  }
+  return 'Could not access camera. Try refreshing the page.';
+}
+
 // ─── Audio helpers ────────────────────────────────────────────────────────────
 
 function beepSuccess(ctx: AudioContext) {
@@ -231,10 +253,8 @@ export function GateScanner({ eventId, eventName }: GateScannerProps) {
 
   const effectiveGate = gateName === 'custom' ? customGate : gateName;
 
-  // ── Camera init ──
+  // ── Camera init — start once on mount, stop only on unmount ──
   useEffect(() => {
-    if (tab !== 'scan') return;
-
     let stream: MediaStream | null = null;
 
     async function startCamera() {
@@ -255,14 +275,15 @@ export function GateScanner({ eventId, eventName }: GateScannerProps) {
             setTorchSupported('torch' in caps);
           }
         }
-      } catch {
-        setCameraError('Camera access denied. Enable camera permissions and reload.');
+      } catch (err) {
+        setCameraError(getCameraErrorMessage(err));
       }
     }
 
     startCamera();
 
     return () => {
+      // Stop stream only on component unmount.
       cancelAnimationFrame(rafRef.current);
       stream?.getTracks().forEach((t) => t.stop());
       videoTrackRef.current = null;
@@ -270,11 +291,12 @@ export function GateScanner({ eventId, eventName }: GateScannerProps) {
       setTorchOn(false);
       setTorchSupported(false);
     };
-  }, [tab]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // empty deps — run once on mount
 
-  // ── Scan loop ──
+  // ── Scan loop — pause when on dashboard tab ──
   useEffect(() => {
-    if (!scanning) return;
+    if (!scanning || tab !== 'scan') return;
 
     function tick() {
       const video = videoRef.current;
@@ -408,9 +430,8 @@ export function GateScanner({ eventId, eventName }: GateScannerProps) {
 
       {/* Content */}
       <div className="relative flex-1 overflow-hidden">
-        {/* ── Scan tab ── */}
-        {tab === 'scan' && (
-          <div className="relative h-full w-full bg-black">
+        {/* ── Scan tab — always mounted; CSS-hidden when on dashboard ── */}
+        <div className={cn('relative h-full w-full bg-black', tab !== 'scan' && 'hidden')}>
             <video
               ref={videoRef}
               className="h-full w-full object-cover"
@@ -490,14 +511,11 @@ export function GateScanner({ eventId, eventName }: GateScannerProps) {
               </div>
             )}
           </div>
-        )}
 
         {/* ── Dashboard tab ── */}
-        {tab === 'dashboard' && (
-          <div className="h-full overflow-y-auto">
-            <DashboardTab eventId={eventId} />
-          </div>
-        )}
+        <div className={cn('h-full overflow-y-auto', tab !== 'dashboard' && 'hidden')}>
+          <DashboardTab eventId={eventId} />
+        </div>
       </div>
     </div>
   );
