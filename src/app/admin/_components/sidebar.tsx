@@ -17,6 +17,7 @@ import {
   MessageCircle,
   BarChart2,
   TrendingUp,
+  Users2,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -183,6 +184,27 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
             </Link>
           </Button>
         </div>
+
+        {/* CRM section */}
+        <div className="mt-4 mb-1 px-2 py-1">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            Growth
+          </span>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(
+            'w-full justify-start gap-2 text-muted-foreground hover:text-foreground',
+            pathname.startsWith('/admin/crm') && 'bg-accent text-accent-foreground',
+          )}
+          asChild
+        >
+          <Link href="/admin/crm">
+            <Users2 className="h-4 w-4" />
+            CRM
+          </Link>
+        </Button>
       </nav>
 
       <Separator />
