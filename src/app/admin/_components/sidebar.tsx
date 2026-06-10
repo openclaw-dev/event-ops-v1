@@ -16,6 +16,7 @@ import {
   BookOpen,
   MessageCircle,
   BarChart2,
+  TrendingUp,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -60,6 +61,7 @@ const EVENT_SUB_NAV = [
   { label: 'Report', segment: 'report', icon: FileBarChart2, wip: false },
   { label: 'Sync', segment: 'sync', icon: RefreshCw, wip: false },
   { label: 'Promoters', segment: 'promoters', icon: Users, wip: false },
+  { label: 'Recovery', segment: 'recovery', icon: TrendingUp, wip: false },
 ] as const;
 
 function EventStatusDot({ status, startDate }: { status: string; startDate: string }) {
