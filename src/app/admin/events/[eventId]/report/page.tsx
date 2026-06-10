@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { ExternalLink, FileText, Printer } from 'lucide-react';
+import { ExternalLink, FileText, Printer, TrendingDown } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -39,6 +39,7 @@ export default async function ReportPage({ params }: ReportPageProps) {
   const gaps = await getKBGaps(params.eventId);
 
   const reportUrl = `/api/events/${params.eventId}/report`;
+  const auditUrl = `/api/events/${params.eventId}/audit`;
   const isEmpty = data.is_empty;
 
   return (
@@ -52,13 +53,21 @@ export default async function ReportPage({ params }: ReportPageProps) {
             save as PDF.
           </p>
         </div>
-        <Button asChild variant="default" className="gap-2">
-          <a href={reportUrl} target="_blank" rel="noopener noreferrer">
-            <FileText className="h-4 w-4" />
-            Generate report
-            <ExternalLink className="h-3.5 w-3.5 opacity-70" />
-          </a>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild variant="outline" className="gap-2">
+            <a href={auditUrl} download>
+              <TrendingDown className="h-4 w-4" />
+              Download Revenue Leak Audit
+            </a>
+          </Button>
+          <Button asChild variant="default" className="gap-2">
+            <a href={reportUrl} target="_blank" rel="noopener noreferrer">
+              <FileText className="h-4 w-4" />
+              Generate report
+              <ExternalLink className="h-3.5 w-3.5 opacity-70" />
+            </a>
+          </Button>
+        </div>
       </div>
 
       <Separator />
