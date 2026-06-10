@@ -141,12 +141,6 @@ export default async function CrmPage() {
                   <th className="px-3 py-2.5 text-right font-medium text-muted-foreground hidden md:table-cell">
                     Sent
                   </th>
-                  <th className="px-3 py-2.5 text-right font-medium text-muted-foreground hidden lg:table-cell">
-                    Converted
-                  </th>
-                  <th className="px-3 py-2.5 text-right font-medium text-muted-foreground hidden lg:table-cell">
-                    Revenue attr.
-                  </th>
                   <th className="px-3 py-2.5 text-center font-medium text-muted-foreground">
                     Status
                   </th>
@@ -169,14 +163,6 @@ export default async function CrmPage() {
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-xs text-muted-foreground hidden md:table-cell">
                       {c.sent_count.toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-xs text-muted-foreground hidden lg:table-cell">
-                      {c.converted_count.toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-xs hidden lg:table-cell">
-                      {Number(c.revenue_attributed_sar) > 0
-                        ? `SAR ${Math.round(Number(c.revenue_attributed_sar)).toLocaleString()}`
-                        : '—'}
                     </td>
                     <td className="px-3 py-2.5 text-center">
                       <span

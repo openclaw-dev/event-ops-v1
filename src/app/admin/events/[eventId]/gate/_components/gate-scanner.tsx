@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import jsQR from 'jsqr';
-import { ScanLine, LayoutDashboard, RefreshCw } from 'lucide-react';
+import { ScanLine, LayoutDashboard, RefreshCw, Flashlight, FlashlightOff } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
@@ -33,7 +33,6 @@ interface GateStats {
     ticket_type: string | null;
     order_id: string | null;
     created_at: string;
-    message: string | null;
   }>;
 }
 
@@ -217,6 +216,7 @@ export function GateScanner({ eventId, eventName }: GateScannerProps) {
   const rafRef = useRef<number>(0);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const lastScannedRef = useRef<{ code: string; ts: number } | null>(null);
+  const videoTrackRef = useRef<MediaStreamTrack | null>(null);
 
   const [tab, setTab] = useState<'scan' | 'dashboard'>('scan');
   const [gateName, setGateName] = useState(GATE_OPTIONS[0]);
@@ -226,6 +226,8 @@ export function GateScanner({ eventId, eventName }: GateScannerProps) {
   const [lastResult, setLastResult] = useState<ScanResponse | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
 
   const effectiveGate = gateName === 'custom' ? customGate : gateName;
 
@@ -245,6 +247,13 @@ export function GateScanner({ eventId, eventName }: GateScannerProps) {
           await videoRef.current.play();
           setScanning(true);
           setCameraError(null);
+
+          const track = stream.getVideoTracks()[0];
+          if (track) {
+            videoTrackRef.current = track;
+            const caps = track.getCapabilities() as Record<string, unknown>;
+            setTorchSupported('torch' in caps);
+          }
         }
       } catch {
         setCameraError('Camera access denied. Enable camera permissions and reload.');
@@ -256,7 +265,10 @@ export function GateScanner({ eventId, eventName }: GateScannerProps) {
     return () => {
       cancelAnimationFrame(rafRef.current);
       stream?.getTracks().forEach((t) => t.stop());
+      videoTrackRef.current = null;
       setScanning(false);
+      setTorchOn(false);
+      setTorchSupported(false);
     };
   }, [tab]);
 
@@ -328,6 +340,16 @@ export function GateScanner({ eventId, eventName }: GateScannerProps) {
         beepError(ctx);
       }
     } catch { /* ignore network errors */ }
+  }
+
+  async function handleTorchToggle() {
+    const track = videoTrackRef.current;
+    if (!track) return;
+    const next = !torchOn;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: next } as MediaTrackConstraintSet] });
+      setTorchOn(next);
+    } catch { /* torch not supported on this device */ }
   }
 
   return (
@@ -423,6 +445,17 @@ export function GateScanner({ eventId, eventName }: GateScannerProps) {
                   RESULT_COLORS[flash],
                 )}
               />
+            )}
+
+            {/* Torch toggle */}
+            {torchSupported && (
+              <button
+                onClick={handleTorchToggle}
+                className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm"
+                aria-label={torchOn ? 'Turn off torch' : 'Turn on torch'}
+              >
+                {torchOn ? <Flashlight className="h-5 w-5 text-yellow-400" /> : <FlashlightOff className="h-5 w-5" />}
+              </button>
             )}
 
             {/* Camera error */}

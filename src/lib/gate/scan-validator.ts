@@ -28,9 +28,39 @@ function formatTime(iso: string): string {
   });
 }
 
+/**
+ * Extracts the order ID candidate from a QR code payload.
+ * Real ticketing QRs often encode a URL or base64 JSON rather than a bare order ID.
+ * Tries, in order:
+ *   1. Last URL path segment if the code is a URL (e.g. https://…/orders/ORD-123)
+ *   2. `order_id` field from base64-decoded JSON
+ *   3. The raw code unchanged (bare order ID, legacy)
+ */
+function parseQrPayload(raw: string): string {
+  const code = raw.trim();
+
+  // URL format: extract last non-empty path segment
+  try {
+    const url = new URL(code);
+    const segments = url.pathname.split('/').filter(Boolean);
+    const last = segments[segments.length - 1];
+    if (last) return decodeURIComponent(last);
+  } catch { /* not a URL */ }
+
+  // Base64 JSON format
+  try {
+    const decoded = atob(code);
+    const json = JSON.parse(decoded) as Record<string, unknown>;
+    if (typeof json.order_id === 'string' && json.order_id) return json.order_id;
+    if (typeof json.id === 'string' && json.id) return json.id;
+  } catch { /* not base64 JSON */ }
+
+  return code;
+}
+
 export async function validateAndRecordScan(params: ValidateScanParams): Promise<ScanResult> {
   const supabase = createAdminClient();
-  const code = params.scanned_code.trim();
+  const code = parseQrPayload(params.scanned_code);
 
   if (!code) {
     return { result: 'invalid', message: '✗ Empty code', message_ar: '✗ رمز فارغ' };
@@ -94,8 +124,8 @@ export async function validateAndRecordScan(params: ValidateScanParams): Promise
     };
   }
 
-  // Admit the ticket.
-  await supabase.from('gate_scans').insert({
+  // Admit the ticket (unique index on admitted prevents double-admission).
+  const { error: insertError } = await supabase.from('gate_scans').insert({
     operator_id: params.operator_id,
     event_id: params.event_id,
     scanned_code: code,
@@ -109,6 +139,19 @@ export async function validateAndRecordScan(params: ValidateScanParams): Promise
     scanner_device: params.scanner_device,
     scanned_by_user_id: params.scanned_by_user_id ?? null,
   });
+
+  // 23505 = unique_violation — concurrent scan admitted this ticket a moment ago.
+  if (insertError) {
+    const pgCode = (insertError as unknown as { code?: string }).code;
+    if (pgCode === '23505') {
+      return {
+        result: 'duplicate',
+        message: '⚠ Already scanned (concurrent)',
+        message_ar: '⚠ تم المسح مسبقاً',
+      };
+    }
+    throw new Error(insertError.message);
+  }
 
   const name = (order.customer_name as string | null) ?? '';
   const ticketType = (order.ticket_type as string | null) ?? '';

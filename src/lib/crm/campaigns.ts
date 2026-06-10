@@ -83,10 +83,18 @@ export async function addRecipients(params: {
 
   const added = (data ?? []).length;
 
-  // Update denormalized total_recipients on the campaign row.
+  // Increment total_recipients (don't overwrite — addRecipients may be called multiple times).
+  const { data: current } = await admin
+    .from('crm_campaigns')
+    .select('total_recipients')
+    .eq('id', params.campaign_id)
+    .single();
+
+  const newTotal = ((current as { total_recipients: number } | null)?.total_recipients ?? 0) + added;
+
   await admin
     .from('crm_campaigns')
-    .update({ total_recipients: added, updated_at: new Date().toISOString() })
+    .update({ total_recipients: newTotal, updated_at: new Date().toISOString() })
     .eq('id', params.campaign_id);
 
   return { added };
@@ -160,7 +168,7 @@ export async function sendCampaign(
     }
     await admin
       .from('crm_campaigns')
-      .update({ status: 'sent', sent_count: 0, updated_at: new Date().toISOString() })
+      .update({ status: 'failed', sent_count: 0, updated_at: new Date().toISOString() })
       .eq('id', campaign_id);
     console.error('[crm/sendCampaign] adapter init failed:', errMsg);
     return { sent: 0, failed: recipients.length };
@@ -213,13 +221,12 @@ export async function sendCampaign(
     }
   }
 
-  // Update campaign stats.
+  // Update campaign stats — preserve total_recipients set by addRecipients.
   await admin
     .from('crm_campaigns')
     .update({
       status: 'sent',
       sent_count: sent,
-      total_recipients: sent + failed,
       updated_at: new Date().toISOString(),
     })
     .eq('id', campaign_id);
@@ -287,24 +294,37 @@ export async function getNoShowSegment(eventId: string): Promise<
 > {
   const admin = createAdminClient();
 
-  // Query all completed orders for this event.
-  // No scan_facts table exists in this schema, so all completed-order holders
-  // are treated as potential no-shows. The operator can further filter manually.
-  const { data } = await admin
-    .from('orders')
-    .select(
-      'customer_phone_e164, customer_name, customer_email, ticket_type, order_id',
-    )
-    .eq('event_id', eventId)
-    .eq('status', 'completed');
+  const [ordersResult, scansResult] = await Promise.all([
+    admin
+      .from('orders')
+      .select('customer_phone_e164, customer_name, customer_email, ticket_type, order_id')
+      .eq('event_id', eventId)
+      .eq('status', 'completed'),
+    admin
+      .from('gate_scans')
+      .select('order_id')
+      .eq('event_id', eventId)
+      .eq('scan_result', 'admitted'),
+  ]);
 
-  return ((data ?? []) as Array<{
+  const orders = (ordersResult.data ?? []) as Array<{
     customer_phone_e164: string;
     customer_name: string | null;
     customer_email: string | null;
     ticket_type: string | null;
     order_id: string;
-  }>).map((o) => ({
+  }>;
+
+  const admittedScans = (scansResult.data ?? []) as Array<{ order_id: string | null }>;
+  const admittedOrderIds = new Set(admittedScans.map((s) => s.order_id).filter(Boolean) as string[]);
+
+  // Only filter by gate scans if the event has scan data (gates were in use).
+  // If no scans exist, return all completed orders as a best-effort segment.
+  const noShows = admittedOrderIds.size > 0
+    ? orders.filter((o) => !admittedOrderIds.has(o.order_id))
+    : orders;
+
+  return noShows.map((o) => ({
     customer_phone_e164: o.customer_phone_e164,
     customer_name: o.customer_name ?? '',
     customer_email: o.customer_email ?? '',

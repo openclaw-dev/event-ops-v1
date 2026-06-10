@@ -226,6 +226,13 @@ export function RecoveryUploader({ eventId }: { eventId: string }) {
         </div>
       )}
 
+      {/* WhatsApp template warning */}
+      {validCount > 0 && !sendResults && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <strong>WhatsApp requirement:</strong> Messages can only be delivered to customers who have an active 24-hour conversation window with your number, or via a pre-approved message template. Customers outside this window will not receive the message.
+        </div>
+      )}
+
       {/* Send button */}
       {validCount > 0 && !sendResults && (
         <Button

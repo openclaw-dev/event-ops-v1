@@ -114,7 +114,7 @@ export async function GET(req: NextRequest) {
   // Stats
   const { data: allScans } = await supabase
     .from('gate_scans')
-    .select('scan_result, created_at, customer_name, ticket_type, order_id, message')
+    .select('scan_result, created_at, customer_name, ticket_type, order_id')
     .eq('event_id', event_id)
     .order('created_at', { ascending: false });
 
@@ -124,7 +124,6 @@ export async function GET(req: NextRequest) {
     customer_name: string | null;
     ticket_type: string | null;
     order_id: string | null;
-    message: string | null;
   }>;
 
   const total_scanned = scans.length;
@@ -141,7 +140,6 @@ export async function GET(req: NextRequest) {
     ticket_type: s.ticket_type,
     order_id: s.order_id,
     created_at: s.created_at,
-    message: s.message,
   }));
 
   return NextResponse.json({

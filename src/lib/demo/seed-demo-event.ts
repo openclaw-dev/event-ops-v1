@@ -167,7 +167,7 @@ export async function seedDemoEvent(operatorId: string): Promise<SeedDemoResult>
     refund_policy: {
       shape: 'tiered',
       tiers: [{ days_before_event: 7, refund_pct: 100 }],
-      allowed_alternatives_after_window: [],
+      allowed_alternatives_after_window: ['transfer', 'credit'],
       credit_validity_months: 12,
       medical_exception_section_id: 'policy.refund.medical',
     },

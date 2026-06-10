@@ -78,15 +78,10 @@ export default async function RecoveryPage({ params }: RecoveryPageProps) {
       <Separator />
 
       {/* Metrics bar */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <MetricCard label="Total attempts" value={stats.total_attempts} />
         <MetricCard label="Messages sent" value={stats.sent} accent="blue" />
         <MetricCard label="Completed" value={stats.completed} accent="emerald" />
-        <MetricCard
-          label="Recovery rate"
-          value={`${stats.recovery_rate_pct.toFixed(0)}%`}
-          accent={stats.recovery_rate_pct >= 20 ? 'emerald' : undefined}
-        />
         <MetricCard
           label="Recovered"
           value={`SAR ${Math.round(stats.recovered_amount_sar).toLocaleString()}`}
@@ -97,6 +92,9 @@ export default async function RecoveryPage({ params }: RecoveryPageProps) {
           value={`SAR ${Math.round(stats.recovery_fee_sar).toLocaleString()}`}
         />
       </div>
+      <p className="text-xs text-muted-foreground">
+        Completion rate requires a payment webhook — contact support to configure.
+      </p>
 
       <Separator />
 

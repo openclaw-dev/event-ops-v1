@@ -104,16 +104,29 @@ export async function getRevenueLeakAuditData(
     attempted_total === 0 ? 0 : (failed_payment_count / attempted_total) * 100;
 
   // ── Scan data ──────────────────────────────────────────────────────────────
-  // No scan_facts table in this version. Scan metrics are all zero; the report
-  // section renders as "no scan data available" via the template.
-  const tickets_scanned = 0;
-  const no_show_count = 0;
-  const no_show_rate_pct = 0;
-  const no_show_revenue_sar = 0;
-  const total_scan_attempts = 0;
-  const failed_scan_count = 0;
-  const duplicate_scan_count = 0;
-  const gate_failure_rate_pct = 0;
+  const { data: scansData } = await admin
+    .from('gate_scans')
+    .select('scan_result')
+    .eq('event_id', eventId);
+
+  const gateScanRows = (scansData ?? []) as Array<{ scan_result: string }>;
+  const total_scan_attempts = gateScanRows.length;
+  const tickets_scanned = gateScanRows.filter((s) => s.scan_result === 'admitted').length;
+  const duplicate_scan_count = gateScanRows.filter((s) => s.scan_result === 'duplicate').length;
+  const failed_scan_count = gateScanRows.filter(
+    (s) => s.scan_result === 'not_found' || s.scan_result === 'invalid',
+  ).length;
+  const gate_failure_rate_pct =
+    total_scan_attempts === 0
+      ? 0
+      : ((duplicate_scan_count + failed_scan_count) / total_scan_attempts) * 100;
+
+  const no_show_count = Math.max(0, tickets_sold - tickets_scanned);
+  const avg_ticket_price_for_no_show =
+    tickets_sold === 0 ? 0 : completed_revenue_sar / tickets_sold;
+  const no_show_rate_pct =
+    tickets_sold === 0 ? 0 : (no_show_count / tickets_sold) * 100;
+  const no_show_revenue_sar = no_show_count * avg_ticket_price_for_no_show;
 
   // ── Conversations ──────────────────────────────────────────────────────────
   const { data: convosData } = await admin
@@ -154,10 +167,8 @@ export async function getRevenueLeakAuditData(
   }
 
   // ── Recovery estimate ──────────────────────────────────────────────────────
-  const avg_ticket_price =
-    tickets_sold === 0 ? average_order_value_sar : completed_revenue_sar / tickets_sold;
   const recoverable_revenue_sar =
-    failed_payment_revenue_sar + no_show_count * avg_ticket_price * 0.3;
+    failed_payment_revenue_sar + no_show_revenue_sar * 0.3;
   const recovery_fee_sar = recoverable_revenue_sar * 0.22;
 
   return {

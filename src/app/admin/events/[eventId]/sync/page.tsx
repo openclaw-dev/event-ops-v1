@@ -60,6 +60,30 @@ export default async function SyncPage({ params }: SyncPageProps) {
     };
   }
 
+  // Resolve dashboard/system changed_by UUIDs to emails via operator_users + auth.
+  const dashboardChangedByIds = changeEvents
+    .filter((row) => row.channel === 'dashboard' || row.channel === 'system')
+    .map((row) => row.changed_by)
+    .filter(Boolean);
+
+  const userEmailLookup: Record<string, string> = {};
+
+  if (dashboardChangedByIds.length > 0) {
+    const { data: ouRows } = await admin
+      .from('operator_users')
+      .select('id, user_id')
+      .in('id', dashboardChangedByIds);
+
+    for (const ou of ouRows ?? []) {
+      try {
+        const { data: { user } } = await admin.auth.admin.getUserById(ou.user_id as string);
+        if (user?.email) {
+          userEmailLookup[ou.id as string] = user.email;
+        }
+      } catch { /* non-fatal */ }
+    }
+  }
+
   // Fetch pending WhatsApp changes (admin client inside findPendingByEvent).
   let pendingChanges: PendingChange[] = [];
   try {
@@ -112,7 +136,7 @@ export default async function SyncPage({ params }: SyncPageProps) {
         </TabsContent>
 
         <TabsContent value="history" className="mt-4">
-          <HistoryTab rows={changeEvents} promoterLookup={promoterLookup} />
+          <HistoryTab rows={changeEvents} promoterLookup={promoterLookup} userEmailLookup={userEmailLookup} />
         </TabsContent>
       </Tabs>
     </div>

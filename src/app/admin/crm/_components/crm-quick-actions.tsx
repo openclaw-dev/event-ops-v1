@@ -238,10 +238,16 @@ export function NoShowCard({ events }: { events: EventOption[] }) {
       )}
       {segment !== null && !segmentLoading && (
         <div className="rounded-md bg-muted/30 px-3 py-2 text-sm">
-          <span className="font-semibold">{segment.length}</span>{' '}
-          <span className="text-muted-foreground">
-            completed orders found for this event
-          </span>
+          {segment.length === 0 ? (
+            <span className="text-muted-foreground">No no-shows found — all ticket holders were scanned in.</span>
+          ) : (
+            <>
+              <span className="font-semibold">{segment.length}</span>{' '}
+              <span className="text-muted-foreground">
+                no-show customer{segment.length !== 1 ? 's' : ''} (ordered, not scanned in)
+              </span>
+            </>
+          )}
         </div>
       )}
 
@@ -262,6 +268,12 @@ export function NoShowCard({ events }: { events: EventOption[] }) {
       <TemplateTextarea value={template} onChange={setTemplate} />
 
       {result && <ResultBanner result={result} />}
+
+      {!result && segment !== null && segment.length > 0 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <strong>WhatsApp requirement:</strong> Messages are only delivered within the 24-hour conversation window or via an approved template. Recipients outside this window will not receive the message.
+        </div>
+      )}
 
       {!result && segment !== null && segment.length > 0 && (
         <Button onClick={handleSend} disabled={isSending} className="gap-2">
@@ -418,6 +430,12 @@ function CsvCampaignCard({
       <TemplateTextarea value={template} onChange={setTemplate} />
 
       {result && <ResultBanner result={result} />}
+
+      {!result && validRows.length > 0 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <strong>WhatsApp requirement:</strong> Messages are only delivered within the 24-hour conversation window or via an approved template. Recipients outside this window will not receive the message.
+        </div>
+      )}
 
       {!result && validRows.length > 0 && (
         <Button onClick={handleSend} disabled={isSending} className="gap-2">

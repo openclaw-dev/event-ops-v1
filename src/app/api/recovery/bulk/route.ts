@@ -93,9 +93,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Process all attempts — one failure does not abort others.
-  const settled = await Promise.allSettled(
-    recovery_attempts.map(async (attempt) => {
+  // Process attempts sequentially — avoids Meta rate-limit (one failure does not abort others).
+  let sent = 0;
+  let failed = 0;
+  const results: Array<{ phone: string; status: 'sent' | 'failed'; error?: string }> = [];
+
+  for (const attempt of recovery_attempts) {
+    try {
       const { id } = await createRecoveryAttempt({
         ...attempt,
         operator_id,
@@ -106,29 +110,22 @@ export async function POST(req: NextRequest) {
         event_name,
         customer_name: attempt.customer_name,
       });
-      return {
+      if (sendResult.success) {
+        sent++;
+        results.push({ phone: attempt.customer_phone_e164, status: 'sent' });
+      } else {
+        failed++;
+        results.push({ phone: attempt.customer_phone_e164, status: 'failed', error: sendResult.error });
+      }
+    } catch (err) {
+      failed++;
+      results.push({
         phone: attempt.customer_phone_e164,
-        status: sendResult.success ? ('sent' as const) : ('failed' as const),
-        error: sendResult.error,
-      };
-    }),
-  );
-
-  let sent = 0;
-  let failed = 0;
-  const results = settled.map((r, i) => {
-    if (r.status === 'fulfilled') {
-      if (r.value.status === 'sent') sent++;
-      else failed++;
-      return r.value;
+        status: 'failed',
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
-    failed++;
-    return {
-      phone: recovery_attempts[i]?.customer_phone_e164 ?? 'unknown',
-      status: 'failed' as const,
-      error: r.reason instanceof Error ? r.reason.message : String(r.reason),
-    };
-  });
+  }
 
   return NextResponse.json({ sent, failed, results });
 }

@@ -57,9 +57,10 @@ const col = createColumnHelper<ChangeEventRow>();
 interface HistoryTabProps {
   rows: ChangeEventRow[];
   promoterLookup: Record<string, PromoterInfo>;
+  userEmailLookup: Record<string, string>;
 }
 
-export function HistoryTab({ rows, promoterLookup }: HistoryTabProps) {
+export function HistoryTab({ rows, promoterLookup, userEmailLookup }: HistoryTabProps) {
   const columns = useMemo(
     () => [
       col.accessor('confirmed_at', {
@@ -92,7 +93,6 @@ export function HistoryTab({ rows, promoterLookup }: HistoryTabProps) {
                 </div>
               );
             }
-            // Promoter not found — show truncated UUID.
             return (
               <span className="font-mono text-xs text-muted-foreground">
                 {changedBy.slice(0, 8)}
@@ -100,7 +100,14 @@ export function HistoryTab({ rows, promoterLookup }: HistoryTabProps) {
             );
           }
 
-          // dashboard / system / unknown
+          // dashboard / system — resolve to email if available
+          if (channel === 'dashboard' || channel === 'system') {
+            const email = userEmailLookup[changedBy];
+            if (email) {
+              return <span className="text-sm">{email}</span>;
+            }
+          }
+
           return (
             <span className="font-mono text-xs text-muted-foreground">
               {changedBy.slice(0, 8)}
@@ -144,7 +151,7 @@ export function HistoryTab({ rows, promoterLookup }: HistoryTabProps) {
         },
       }),
     ],
-    [promoterLookup],
+    [promoterLookup, userEmailLookup],
   );
 
   const table = useReactTable({

@@ -119,14 +119,13 @@ function buildEventSelectionPrompt(
 async function handleCustomerSupportMessage(
   message: InboundTextMessage,
   adapter: WhatsAppAdapter,
+  phoneNumberId: string,
 ): Promise<void> {
   const phone = message.from_phone_e164;
   const admin = createAdminClient();
 
-  // Step 1: Identify operator via the configured phone number.
-  const operator = await getOperatorByPhoneNumberId(
-    process.env.META_PHONE_NUMBER_ID ?? '',
-  );
+  // Step 1: Identify operator via the receiving phone number (from webhook payload).
+  const operator = await getOperatorByPhoneNumberId(phoneNumberId);
   if (!operator) {
     console.error(
       '[whatsapp/inbound] No operator found for META_PHONE_NUMBER_ID:',
@@ -377,6 +376,7 @@ async function handleCustomerSupportMessage(
 async function handleInboundMessage(
   message: InboundMessage,
   adapter: WhatsAppAdapter,
+  phoneNumberId: string,
 ): Promise<void> {
   const admin = createAdminClient();
 
@@ -506,7 +506,7 @@ async function handleInboundMessage(
 
     // ── Customer support flow ────────────────────────────────────────────────
     try {
-      await handleCustomerSupportMessage(message, adapter);
+      await handleCustomerSupportMessage(message, adapter, phoneNumberId);
     } catch (err) {
       console.error('[whatsapp/inbound] customer support error:', err);
       await adapter.sendText({
@@ -603,6 +603,21 @@ async function handleInboundMessage(
   }
 }
 
+// ─── Extract receiving phone_number_id from Meta webhook payload ──────────────
+
+function extractPhoneNumberId(body: unknown): string {
+  try {
+    const b = body as Record<string, unknown>;
+    const entry = (b.entry as unknown[])?.[0] as Record<string, unknown> | undefined;
+    const changes = (entry?.changes as unknown[])?.[0] as Record<string, unknown> | undefined;
+    const value = changes?.value as Record<string, unknown> | undefined;
+    const metadata = value?.metadata as Record<string, unknown> | undefined;
+    const id = metadata?.phone_number_id as string | undefined;
+    if (id) return id;
+  } catch { /* ignore */ }
+  return process.env.META_PHONE_NUMBER_ID ?? '';
+}
+
 // ─── POST — Inbound message receiver ─────────────────────────────────────────
 
 export async function POST(req: Request): Promise<Response> {
@@ -631,10 +646,11 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     const messages: InboundMessage[] = adapter.parseInbound(body);
+    const phoneNumberId = extractPhoneNumberId(body);
 
     for (const message of messages) {
       try {
-        await handleInboundMessage(message, adapter);
+        await handleInboundMessage(message, adapter, phoneNumberId);
       } catch (err) {
         console.error(
           '[whatsapp/inbound] message processing failed:',
