@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation';
 
 import { createServerClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveActiveOperatorId } from '@/lib/get-active-operator';
 import { Separator } from '@/components/ui/separator';
 import { OperatorKbUploadForm } from './_components/operator-kb-upload-form';
@@ -29,8 +28,7 @@ export default async function OperatorKbPage() {
   if (!operatorId) redirect('/admin/onboarding');
 
   // ── Fetch operator KB sections ───────────────────────────────────────────
-  const admin = createAdminClient();
-  const { data: rawSections } = await admin
+  const { data: rawSections } = await supabase
     .from('operator_kb_sections')
     .select('id, section_id, title, content, source_file, updated_at')
     .eq('operator_id', operatorId)

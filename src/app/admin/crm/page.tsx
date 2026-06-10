@@ -19,6 +19,9 @@ const STATUS_STYLES: Record<string, string> = {
   draft: 'bg-zinc-100 text-zinc-700 border-zinc-200',
   sending: 'bg-amber-50 text-amber-700 border-amber-200',
   sent: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  partial: 'bg-amber-50 text-amber-700 border-amber-200',
+  send_failed: 'bg-red-50 text-red-700 border-red-200',
+  failed: 'bg-red-50 text-red-700 border-red-200',
   paused: 'bg-sky-50 text-sky-700 border-sky-200',
   cancelled: 'bg-red-50 text-red-700 border-red-200',
 };

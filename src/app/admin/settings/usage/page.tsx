@@ -182,6 +182,13 @@ export default async function UsagePage({ searchParams }: UsagePageProps) {
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-8 px-8 py-8">
+      {process.env.VERCEL_ENV === 'production' && (
+        <p className="rounded-md border border-muted bg-muted/30 px-4 py-2.5 text-xs text-muted-foreground">
+          Running on Vercel Hobby — cron jobs (weekly digest) are capped at 60 seconds. Long digests
+          may be silently truncated. Upgrade to Vercel Pro to remove this limit.
+        </p>
+      )}
+
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>

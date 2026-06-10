@@ -285,6 +285,7 @@ export function GateScanner({ eventId, eventName }: GateScannerProps) {
     return () => {
       // Stop stream only on component unmount.
       cancelAnimationFrame(rafRef.current);
+      audioCtxRef.current?.close();
       stream?.getTracks().forEach((t) => t.stop());
       videoTrackRef.current = null;
       setScanning(false);

@@ -69,12 +69,11 @@ const CSS = `
   html, body {
     background: #ffffff;
     color: #0F172A;
-    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
     font-size: 11pt;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
-  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
   @page { size: A4; margin: 0; }
   .page {
     width: 210mm;

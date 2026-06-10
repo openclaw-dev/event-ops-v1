@@ -171,8 +171,10 @@ async function processOperator(
     const prices = (eventConfig.ticket_tiers ?? [])
       .map((t) => t.price ?? 0)
       .filter((p) => p > 0);
-    const lowestPrice = prices.length > 0 ? Math.min(...prices) : 150;
-    totalSarSaved += metrics.refunds_deflected * lowestPrice;
+    const lowestPrice = prices.length > 0 ? Math.min(...prices) : 0;
+    if (lowestPrice > 0) {
+      totalSarSaved += metrics.refunds_deflected * lowestPrice;
+    }
 
     digestEvents.push({
       name: ev.name,

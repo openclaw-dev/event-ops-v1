@@ -222,10 +222,11 @@ export async function sendCampaign(
   }
 
   // Update campaign stats — preserve total_recipients set by addRecipients.
+  const finalStatus = sent === 0 ? 'send_failed' : failed > 0 ? 'partial' : 'sent';
   await admin
     .from('crm_campaigns')
     .update({
-      status: 'sent',
+      status: finalStatus,
       sent_count: sent,
       updated_at: new Date().toISOString(),
     })
