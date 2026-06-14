@@ -47,11 +47,28 @@ export async function getOperatorByPhoneNumberId(
   return { id: row.id, operator_id: row.id };
 }
 
+/**
+ * Single-tenant fallback: returns the sole operator in the system, or null
+ * when there are zero or multiple operators (multi-tenant safety check).
+ *
+ * Used when `whatsapp_business_phone_number_id` has not been saved on the
+ * operator row (e.g. Settings → WhatsApp page was never saved).
+ */
+export async function getSingleOperatorFallback(): Promise<{ id: string; operator_id: string } | null> {
+  const admin = createAdminClient();
+  const { data } = await admin.from('operators').select('id').limit(2);
+  const rows = (data ?? []) as { id: string }[];
+  if (rows.length !== 1) return null;
+  const row = rows[0]!;
+  return { id: row.id, operator_id: row.id };
+}
+
 // ─── Event routing ────────────────────────────────────────────────────────────
 
 /**
- * Finds all live events for an operator that are within a 12-hour window of
- * their start date (i.e. starting soon or started very recently).
+ * Finds all active events for an operator:
+ *   - Any event with status = 'live' (regardless of start date).
+ *   - Draft events whose end_date is within the last 48 hours (post-event support window).
  *
  * 0 results  → { type: 'none' }
  * 1 result   → { type: 'single', event_id, event }
@@ -68,9 +85,11 @@ export async function resolveEventForOperator(
     .from('events')
     .select('id, name, start_date, end_date, status, config')
     .eq('operator_id', operatorId)
-    // Include live events, and draft events ended within the last 48 hours for post-event support.
+    // Live events: always included — if the operator marked it live, it is active.
+    // Draft events: only those ended within the last 48 hours (post-event support).
+    // NOTE: no .gte('start_date', cutoff) here — that incorrectly excluded live events
+    // that started more than 48 hours ago (e.g. a multi-day festival on day 3).
     .or(`status.eq.live,and(status.eq.draft,end_date.gte.${cutoff})`)
-    .gte('start_date', cutoff)
     .is('deleted_at', null)
     .order('start_date', { ascending: true })
     .limit(5);

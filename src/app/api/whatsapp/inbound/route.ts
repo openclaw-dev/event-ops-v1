@@ -32,6 +32,7 @@ import type { ConversationSnapshot, Language, OrderContext } from '@/lib/agent/t
 import type { EventConfig } from '@/lib/types';
 import {
   getOperatorByPhoneNumberId,
+  getSingleOperatorFallback,
   resolveEventForOperator,
 } from '@/lib/agent/whatsapp-router';
 import { getOrCreateWhatsAppConversation } from '@/lib/agent/whatsapp-conversation';
@@ -151,6 +152,13 @@ function parseEventSelection(
   return null;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Ensures phone is E.164 (+prefix). Adapters already do this; this is a safety net. */
+function normalisePhone(phone: string): string {
+  return phone.startsWith('+') ? phone : `+${phone}`;
+}
+
 // ─── Customer support flow ────────────────────────────────────────────────────
 
 async function handleCustomerSupportMessage(
@@ -158,17 +166,30 @@ async function handleCustomerSupportMessage(
   adapter: WhatsAppAdapter,
   phoneNumberId: string,
 ): Promise<void> {
-  const phone = message.from_phone_e164;
+  const phone = normalisePhone(message.from_phone_e164);
   const admin = createAdminClient();
 
   // Step 1: Identify operator via the receiving phone number (from webhook payload).
-  const operator = await getOperatorByPhoneNumberId(phoneNumberId);
+  let operator = await getOperatorByPhoneNumberId(phoneNumberId);
+  console.log('[inbound] operator lookup result', { found: !!operator, phoneNumberId });
+
   if (!operator) {
-    console.error(
-      '[whatsapp/inbound] No operator found for META_PHONE_NUMBER_ID:',
-      process.env.META_PHONE_NUMBER_ID,
-    );
-    return; // no reply — operator is not configured
+    // Fallback for single-tenant deployments where whatsapp_business_phone_number_id
+    // has not yet been saved in the operator row (Settings → WhatsApp not saved).
+    operator = await getSingleOperatorFallback();
+    if (operator) {
+      console.warn(
+        '[inbound] whatsapp_business_phone_number_id not configured in DB — using single-tenant fallback operator:',
+        operator.operator_id,
+        '(configure it at Settings → WhatsApp to remove this warning)',
+      );
+    } else {
+      console.error(
+        '[inbound] No operator found for phoneNumberId:', phoneNumberId,
+        '— set whatsapp_business_phone_number_id on the operator row via Settings → WhatsApp',
+      );
+      return;
+    }
   }
 
   // Step 2: Check for a pending event selection from a previous turn.
@@ -197,8 +218,11 @@ async function handleCustomerSupportMessage(
   let eventRecentlyEnded = false;
   if (!resolvedEventId) {
     const routeResult = await resolveEventForOperator(operator.operator_id);
+    console.log('[inbound] event routing result', { type: routeResult.type });
 
     if (routeResult.type === 'none') {
+      console.warn('[inbound] no active events for operator:', operator.operator_id,
+        '— ensure at least one event has status=live');
       await adapter.sendText({
         to_phone_e164: phone,
         text: 'There are no active events at the moment.',
@@ -218,6 +242,8 @@ async function handleCustomerSupportMessage(
     resolvedEventId = routeResult.event_id;
     eventRecentlyEnded = routeResult.recently_ended;
   }
+
+  console.log('[inbound] resolved event_id:', resolvedEventId);
 
   // Step 4: Get or create the customer conversation.
   const conv = await getOrCreateWhatsAppConversation({
@@ -422,13 +448,18 @@ async function handleInboundMessage(
 
   // ── Text messages ─────────────────────────────────────────────────────────
   if (message.type === 'text') {
+    const fromPhone = normalisePhone(message.from_phone_e164);
+    console.log('[inbound] message received', { type: message.type, from: fromPhone });
+
     // 1. Look up promoter by phone.
     const { data: promoterData } = await admin
       .from('promoters')
       .select('id, operator_id, event_id, preferred_language')
-      .eq('phone_e164', message.from_phone_e164)
+      .eq('phone_e164', fromPhone)
       .eq('is_active', true)
       .maybeSingle();
+
+    console.log('[inbound] promoter lookup result', { found: !!promoterData, event_id: (promoterData as Record<string, unknown> | null)?.event_id ?? null });
 
     // ── Promoter flow (completely unchanged) ────────────────────────────────
     if (promoterData) {
@@ -441,7 +472,7 @@ async function handleInboundMessage(
 
       if (!promoter.event_id) {
         await adapter.sendText({
-          to_phone_e164: message.from_phone_e164,
+          to_phone_e164: fromPhone,
           text: 'Your account is not linked to an event. Contact the operator.',
         });
         return;
@@ -456,7 +487,7 @@ async function handleInboundMessage(
 
       if (!eventData) {
         await adapter.sendText({
-          to_phone_e164: message.from_phone_e164,
+          to_phone_e164: fromPhone,
           text: 'The linked event could not be found. Contact the operator.',
         });
         return;
@@ -467,6 +498,7 @@ async function handleInboundMessage(
       // Extract structured changes via Haiku.
       const language = promoter.preferred_language as 'en' | 'ar' | 'ru';
       const extraction = await extractChanges(message.text, eventRow, language);
+      console.log('[inbound] extraction result', { changes: extraction.changes.length, ambiguous: extraction.ambiguous.length });
 
       // Fire-and-forget usage tracking (non-blocking).
       void trackUsage({
@@ -480,6 +512,7 @@ async function handleInboundMessage(
 
       // Generate diff against current event state.
       const diff = generateDiff(extraction.changes, eventRow);
+      console.log('[inbound] diff result', { meaningful: diff.meaningful.length, has_errors: diff.has_errors });
 
       // If nothing actionable, reply with a summary and stop.
       if (diff.meaningful.length === 0) {
@@ -490,7 +523,7 @@ async function handleInboundMessage(
             .join('; ');
           replyText = `Could not parse: ${ambigList}. Please resend with clearer wording.`;
         }
-        await adapter.sendText({ to_phone_e164: message.from_phone_e164, text: replyText });
+        await adapter.sendText({ to_phone_e164: fromPhone, text: replyText });
         return;
       }
 
@@ -524,13 +557,15 @@ async function handleInboundMessage(
 
       // Send interactive message with Confirm / Cancel buttons.
       const sendResult = await adapter.sendInteractive({
-        to_phone_e164: message.from_phone_e164,
+        to_phone_e164: fromPhone,
         body_text: bodyText,
         buttons: [
           { id: `confirm_pc_${pendingChange.id}`, title: 'Confirm' },
           { id: `cancel_pc_${pendingChange.id}`, title: 'Cancel' },
         ],
       });
+
+      console.log('[inbound] send interactive result', { success: sendResult.success, error: sendResult.error ?? null });
 
       // Record send outcome on the pending_changes row.
       if (sendResult.success && sendResult.wamid) {
@@ -559,6 +594,9 @@ async function handleInboundMessage(
 
   // ── Button replies: confirm or cancel a pending diff ──────────────────────
   if (message.type === 'button_reply') {
+    const fromPhone = normalisePhone(message.from_phone_e164);
+    console.log('[inbound] message received', { type: message.type, from: fromPhone });
+
     // 1. Resolve the pending change from the message we sent.
     let pendingChange: PendingChange | null = null;
     try {
@@ -577,7 +615,7 @@ async function handleInboundMessage(
 
     if (!promoterData) return;
     const promoter = promoterData as { id: string; phone_e164: string };
-    if (promoter.phone_e164 !== message.from_phone_e164) return;
+    if (promoter.phone_e164 !== fromPhone) return;
 
     // 3. Handle "Confirm" reply.
     if (message.button_id.startsWith('confirm_pc_')) {
@@ -601,17 +639,17 @@ async function handleInboundMessage(
           (i) => !i.is_noop && i.coercion_error === null && !i.tier_not_found,
         ).length;
         await adapter.sendText({
-          to_phone_e164: message.from_phone_e164,
+          to_phone_e164: fromPhone,
           text: `✓ Done. ${count} change(s) applied to ${eventName}.`,
         });
       } else if (result.status === 'race_lost') {
         await adapter.sendText({
-          to_phone_e164: message.from_phone_e164,
+          to_phone_e164: fromPhone,
           text: 'Already processed.',
         });
       } else if (result.status === 'expired') {
         await adapter.sendText({
-          to_phone_e164: message.from_phone_e164,
+          to_phone_e164: fromPhone,
           text: 'This change request has expired. Please resend.',
         });
       }
@@ -627,7 +665,7 @@ async function handleInboundMessage(
         via: 'whatsapp',
       });
       await adapter.sendText({
-        to_phone_e164: message.from_phone_e164,
+        to_phone_e164: fromPhone,
         text: 'Cancelled.',
       });
     }
@@ -637,7 +675,7 @@ async function handleInboundMessage(
   // ── Unsupported message types ─────────────────────────────────────────────
   if (message.type === 'unsupported') {
     await adapter.sendText({
-      to_phone_e164: message.from_phone_e164,
+      to_phone_e164: normalisePhone(message.from_phone_e164),
       text: 'Sorry, I can only process text messages.',
     });
   }
@@ -681,7 +719,8 @@ export async function POST(req: Request): Promise<Response> {
 
     try {
       adapter.verifySignature(rawBody, Object.fromEntries(req.headers));
-    } catch {
+    } catch (sigErr) {
+      console.error('[inbound] signature verification failed — request ignored:', sigErr);
       return Response.json({ status: 'ignored' }, { status: 200 });
     }
 
