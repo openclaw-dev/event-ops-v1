@@ -145,7 +145,7 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
   const pathname = usePathname();
 
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col border-r bg-background">
+    <aside className="hidden md:flex h-screen w-64 shrink-0 flex-col border-r bg-background">
       {/* Operator switcher */}
       <div className="p-3">
         <OperatorSwitcher operators={operators} current={currentOperator} />
