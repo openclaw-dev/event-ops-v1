@@ -50,13 +50,28 @@ async function postToMeta(
     body: JSON.stringify(body),
   });
 
-  if (!res.ok) {
-    const text = await res.text();
-    return { success: false, error: `Meta API ${res.status}: ${text}` };
+  let responseBody: unknown;
+  try {
+    responseBody = await res.json();
+  } catch {
+    const fallback = `Meta API ${res.status}: (non-JSON response)`;
+    console.error('[meta-adapter] postToMeta FAILED (non-JSON)', { status: res.status, to: body.to });
+    return { success: false, error: fallback };
   }
 
-  const data = (await res.json()) as MetaSendResponse;
-  return { success: true, wamid: data.messages?.[0]?.id };
+  if (!res.ok) {
+    console.error('[meta-adapter] postToMeta FAILED', {
+      status: res.status,
+      to: body.to,
+      body: JSON.stringify(responseBody),
+    });
+    return { success: false, error: JSON.stringify(responseBody) };
+  }
+
+  const data = responseBody as MetaSendResponse;
+  const wamid = data.messages?.[0]?.id;
+  console.log('[meta-adapter] postToMeta SUCCESS', { wamid, to: body.to });
+  return { success: true, wamid };
 }
 
 // ─── Adapter ──────────────────────────────────────────────────────────────────
