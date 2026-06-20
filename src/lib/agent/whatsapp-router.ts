@@ -79,17 +79,24 @@ export async function resolveEventForOperator(
 ): Promise<EventRouteResult> {
   const admin = createAdminClient();
 
-  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const now = new Date();
+  // Lower bound: 48h ago (events that ended earlier than this are too stale).
+  const recentCutoff = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString().split('T')[0];
+  // Upper bound: today's date (draft events with a FUTURE end_date are not yet ended).
+  const today = now.toISOString().split('T')[0];
 
   const { data } = await admin
     .from('events')
     .select('id, name, start_date, end_date, status, config')
     .eq('operator_id', operatorId)
-    // Live events: always included — if the operator marked it live, it is active.
-    // Draft events: only those ended within the last 48 hours (post-event support).
-    // NOTE: no .gte('start_date', cutoff) here — that incorrectly excluded live events
-    // that started more than 48 hours ago (e.g. a multi-day festival on day 3).
-    .or(`status.eq.live,and(status.eq.draft,end_date.gte.${cutoff})`)
+    // Live events: always included.
+    // Draft events: only those that have ALREADY ENDED (end_date < today) within the
+    // last 48 hours (end_date >= recentCutoff). A draft event with a future end_date
+    // is NOT yet ended and must never appear in the customer-support routing.
+    .or(
+      `status.eq.live,` +
+      `and(status.eq.draft,end_date.gte.${recentCutoff},end_date.lt.${today})`,
+    )
     .is('deleted_at', null)
     .order('start_date', { ascending: true })
     .limit(5);

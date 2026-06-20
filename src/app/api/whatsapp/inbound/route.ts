@@ -193,22 +193,33 @@ async function handleCustomerSupportMessage(
   }
 
   // Step 2: Check for a pending event selection from a previous turn.
+  // effectiveMessageText starts as the current message but is overridden with
+  // the customer's ORIGINAL question when we resolve a multi-event selection.
+  // This ensures the agent sees "what time do doors open?" not "1".
   let resolvedEventId: string | null = null;
-  const pending = await getPendingEventSelection(phone);
+  let effectiveMessageText = message.text;
+  const pendingSelection = await getPendingEventSelection(phone);
 
-  if (pending) {
-    const idx = parseEventSelection(message.text, pending);
+  if (pendingSelection) {
+    const idx = parseEventSelection(message.text, pendingSelection.events);
     if (idx !== null) {
-      const chosen = pending[idx];
+      const chosen = pendingSelection.events[idx];
       if (chosen) {
         await clearPendingEventSelection(phone);
         resolvedEventId = chosen.id;
+        // Re-inject the original question so the KB/agent pipeline answers it,
+        // not the "1" / "2" selection reply.
+        if (pendingSelection.original_message) {
+          effectiveMessageText = pendingSelection.original_message;
+        }
+        console.log('[inbound] resolved event selection', { event_id: chosen.id, event_name: chosen.name });
+        console.log('[inbound] re-processing original message after event selection', { original_message: effectiveMessageText });
       }
     } else {
       // Invalid selection — re-send the prompt.
       await adapter.sendText({
         to_phone_e164: phone,
-        text: buildEventSelectionPrompt(pending),
+        text: buildEventSelectionPrompt(pendingSelection.events),
       });
       return;
     }
@@ -231,7 +242,9 @@ async function handleCustomerSupportMessage(
     }
 
     if (routeResult.type === 'multiple') {
-      await setPendingEventSelection(phone, routeResult.events);
+      // Store the original question alongside the event list so it can be
+      // re-injected on the next turn once the customer picks an event.
+      await setPendingEventSelection(phone, routeResult.events, message.text);
       await adapter.sendText({
         to_phone_e164: phone,
         text: buildEventSelectionPrompt(routeResult.events),
@@ -300,7 +313,7 @@ async function handleCustomerSupportMessage(
       ...conv.history,
       {
         role: 'user',
-        text: message.text,
+        text: effectiveMessageText,
         created_at: new Date().toISOString(),
       },
     ],
@@ -313,7 +326,7 @@ async function handleCustomerSupportMessage(
   const result = await runAgent({
     supabase: admin,
     snapshot,
-    message: message.text,
+    message: effectiveMessageText,
     eventConfig,
     operatorId: operator.operator_id,
   });
@@ -326,7 +339,7 @@ async function handleCustomerSupportMessage(
   await admin.from('messages').insert({
     conversation_id: conv.conversation_id,
     role: 'user',
-    text: message.text,
+    text: effectiveMessageText,
   });
 
   await admin.from('messages').insert({
@@ -393,7 +406,7 @@ async function handleCustomerSupportMessage(
           event: { ...rawEventRow, id: resolvedEventId },
           escalation_id: newEscalation?.id ?? 'unknown',
           customer_phone: phone,
-          trigger_message: message.text,
+          trigger_message: effectiveMessageText,
           intent: result.classified_intent ?? result.escalation.reason,
         });
       } catch (notifyErr) {

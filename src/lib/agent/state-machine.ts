@@ -96,6 +96,7 @@ const HEDGING_PATTERNS: RegExp[] = [
   /i'?m not certain/i,
   /i'?m unsure/i,
   /not entirely sure/i,
+  /i don'?t know/i,
 ];
 
 function containsHedgingLanguage(text: string): boolean {
@@ -267,6 +268,12 @@ async function generateWithGuardrails(
   order: OrderContext | null,
   newState: AgentState,
 ): Promise<AgentTurnResult> {
+  console.log('[inbound] kb sections retrieved', {
+    count: kbSections.length,
+    sectionIds: kbSections.map((s) => s.section_id),
+    intent: classification.intent,
+  });
+
   const gen: GenerationOutput = await generateCitedReply({
     message: input.message,
     intent: classification.intent,
@@ -330,7 +337,14 @@ async function generateWithGuardrails(
   }
 
   // Guardrail 7: hedging language signals low confidence — escalate.
-  if (containsHedgingLanguage(gen.response_text)) {
+  const hedgingDetected = containsHedgingLanguage(gen.response_text);
+  console.log('[inbound] generator confidence check', {
+    confidence: gen.confidence,
+    hedging_detected: hedgingDetected,
+    requires_escalation: gen.requires_escalation,
+    response_preview: gen.response_text.slice(0, 100),
+  });
+  if (hedgingDetected) {
     return escalateResult(
       input.snapshot,
       'hedging_language_detected',

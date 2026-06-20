@@ -20,13 +20,22 @@ const TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 type PendingEvents = Array<{ id: string; name: string }>;
 
+export interface PendingEventSelection {
+  events: PendingEvents;
+  /** The customer's original question before they were asked to pick an event. */
+  original_message: string | null;
+}
+
 /**
  * Store a pending event selection for the given phone number.
+ * Also persists the customer's original message so it can be re-injected
+ * after they reply with a selection number.
  * Overwrites any previous pending selection. Resets the TTL.
  */
 export async function setPendingEventSelection(
   phone: string,
   events: PendingEvents,
+  originalMessage: string | null,
 ): Promise<void> {
   const admin = createAdminClient();
   const expiresAt = new Date(Date.now() + TTL_MS).toISOString();
@@ -37,6 +46,7 @@ export async function setPendingEventSelection(
       {
         phone_e164: phone,
         pending_event_selection: events,
+        original_message: originalMessage,
         expires_at: expiresAt,
         updated_at: new Date().toISOString(),
       },
@@ -54,12 +64,12 @@ export async function setPendingEventSelection(
  */
 export async function getPendingEventSelection(
   phone: string,
-): Promise<PendingEvents | null> {
+): Promise<PendingEventSelection | null> {
   const admin = createAdminClient();
 
   const { data, error } = await admin
     .from('whatsapp_session_state')
-    .select('pending_event_selection, expires_at')
+    .select('pending_event_selection, original_message, expires_at')
     .eq('phone_e164', phone)
     .gt('expires_at', new Date().toISOString())
     .maybeSingle();
@@ -70,8 +80,13 @@ export async function getPendingEventSelection(
   }
   if (!data) return null;
 
-  const raw = (data as { pending_event_selection: unknown }).pending_event_selection;
-  return Array.isArray(raw) ? (raw as PendingEvents) : null;
+  const row = data as { pending_event_selection: unknown; original_message: string | null };
+  if (!Array.isArray(row.pending_event_selection)) return null;
+
+  return {
+    events: row.pending_event_selection as PendingEvents,
+    original_message: row.original_message ?? null,
+  };
 }
 
 /**
