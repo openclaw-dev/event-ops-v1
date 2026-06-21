@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -19,14 +20,29 @@ import {
   TrendingUp,
   Users2,
   ScanLine,
+  MoreHorizontal,
+  Trash2,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { OperatorSwitcher } from './operator-switcher';
 import { SignOutButton } from './sign-out-button';
+import { deleteEvent } from '@/app/admin/events/[eventId]/setup/actions';
 
 interface Event {
   id: string;
@@ -72,44 +88,101 @@ function EventStatusDot({ status, startDate }: { status: string; startDate: stri
   const isPast = startDate < today;
 
   if (status === 'live') {
-    return <span className="ml-auto flex h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />;
+    return <span className="flex h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />;
   }
   if (isPast || status === 'closed' || status === 'archived') {
-    return <span className="ml-auto flex h-1.5 w-1.5 shrink-0 rounded-full bg-gray-400" />;
+    return <span className="flex h-1.5 w-1.5 shrink-0 rounded-full bg-gray-400" />;
   }
-  // draft / any non-live future event
-  return <span className="ml-auto flex h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />;
+  return <span className="flex h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />;
 }
 
-function EventNavItem({ event }: { event: Event }) {
+function EventNavItem({
+  event,
+  isExpanded,
+  onToggle,
+}: {
+  event: Event;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
   const pathname = usePathname();
   const base = `/admin/events/${event.id}`;
   const isActive = pathname.startsWith(base);
 
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [confirmName, setConfirmName] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  function openDelete(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDeleteOpen(true);
+  }
+
+  function handleDeleteOpenChange(open: boolean) {
+    setDeleteOpen(open);
+    if (!open) {
+      setConfirmName('');
+      setDeleteError(null);
+    }
+  }
+
+  async function handleDelete(e: React.MouseEvent) {
+    e.preventDefault();
+    setDeleting(true);
+    setDeleteError(null);
+    const result = await deleteEvent(event.id);
+    if (result?.error) {
+      setDeleteError(result.error);
+      setDeleting(false);
+    }
+  }
+
   return (
     <div>
-      <Link
-        href={base}
+      <div
         className={cn(
-          'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors',
+          'group flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors',
           isActive
             ? 'bg-accent font-medium text-accent-foreground'
             : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground',
         )}
       >
-        <ChevronRight
-          className={cn('h-3 w-3 shrink-0 transition-transform', isActive && 'rotate-90')}
-        />
-        <span className="truncate">{event.name}</span>
-        {event.is_demo && (
-          <span className="ml-auto shrink-0 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="shrink-0 rounded p-0.5 hover:bg-accent/50"
+          aria-label={isExpanded ? 'Collapse' : 'Expand'}
+        >
+          <ChevronRight
+            className={cn('h-3 w-3 transition-transform', isExpanded && 'rotate-90')}
+          />
+        </button>
+
+        <Link href={base} className="min-w-0 flex-1 truncate">
+          {event.name}
+        </Link>
+
+        {event.is_demo ? (
+          <span className="shrink-0 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">
             Demo
           </span>
+        ) : (
+          <EventStatusDot status={event.status} startDate={event.start_date} />
         )}
-        {!event.is_demo && <EventStatusDot status={event.status} startDate={event.start_date} />}
-      </Link>
 
-      {isActive && (
+        <button
+          type="button"
+          onClick={openDelete}
+          className="ml-0.5 shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+          aria-label="Delete event"
+        >
+          <MoreHorizontal className="h-3 w-3" />
+        </button>
+      </div>
+
+      {isExpanded && (
         <div className="ml-4 mt-0.5 space-y-0.5 border-l pl-2.5">
           {EVENT_SUB_NAV.map(({ label, segment, icon: Icon, wip }) => {
             const href = `${base}/${segment}`;
@@ -137,12 +210,80 @@ function EventNavItem({ event }: { event: Event }) {
           })}
         </div>
       )}
+
+      <AlertDialog open={deleteOpen} onOpenChange={handleDeleteOpenChange}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-4 w-4 text-destructive" />
+              Delete event
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <strong>{event.name}</strong> and all associated data —
+              conversations, orders, KB, gate scans, escalations, and payment recovery records.
+              This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-2">
+            <Label htmlFor={`confirm-delete-${event.id}`} className="text-sm">
+              Type <strong>{event.name}</strong> to confirm
+            </Label>
+            <Input
+              id={`confirm-delete-${event.id}`}
+              value={confirmName}
+              onChange={(e) => setConfirmName(e.target.value)}
+              className="mt-1.5"
+              placeholder={event.name}
+              autoComplete="off"
+            />
+            {deleteError && <p className="mt-1.5 text-xs text-destructive">{deleteError}</p>}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={confirmName !== event.name || deleting}
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? 'Deleting…' : 'Delete event'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
 
 export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
   const pathname = usePathname();
+
+  const activeEventId =
+    events.find((e) => pathname.startsWith(`/admin/events/${e.id}`))?.id ?? null;
+
+  const [expandedEvents, setExpandedEvents] = useState<Set<string>>(
+    () => new Set(activeEventId ? [activeEventId] : []),
+  );
+
+  // Auto-expand when navigating into an event that isn't already expanded.
+  useEffect(() => {
+    if (activeEventId) {
+      setExpandedEvents((prev) => {
+        if (prev.has(activeEventId)) return prev;
+        const next = new Set(prev);
+        next.add(activeEventId);
+        return next;
+      });
+    }
+  }, [activeEventId]);
+
+  function toggleEvent(id: string) {
+    setExpandedEvents((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   return (
     <aside className="hidden md:flex h-screen w-64 shrink-0 flex-col border-r bg-background">
@@ -167,7 +308,12 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
         ) : (
           <div className="space-y-0.5">
             {events.map((event) => (
-              <EventNavItem key={event.id} event={event} />
+              <EventNavItem
+                key={event.id}
+                event={event}
+                isExpanded={expandedEvents.has(event.id)}
+                onToggle={() => toggleEvent(event.id)}
+              />
             ))}
           </div>
         )}

@@ -6,6 +6,7 @@ import { EventSetupForm } from '../../_components/event-setup-form';
 import { PublishButton } from './_components/publish-button';
 import { EndEventButton } from './_components/end-event-button';
 import { ReadinessChecklist } from './_components/readiness-checklist';
+import { DeleteEventButton } from './_components/delete-event-button';
 import { getEventReadiness } from '@/lib/agent/event-readiness';
 import { type EventSetupFormData } from '@/lib/schemas';
 import { type EventConfig } from '@/lib/types';
@@ -168,6 +169,18 @@ export default async function SetupPage({ params }: SetupPageProps) {
 
       {/* ── Readiness checklist — draft, non-past events only ─────────────── */}
       {readiness && <ReadinessChecklist result={readiness} />}
+
+      {/* ── Danger zone ───────────────────────────────────────────────────── */}
+      <div className="mt-10 rounded-lg border border-destructive/30 bg-destructive/5 p-6">
+        <h2 className="text-base font-semibold text-destructive">Danger zone</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Deleting an event is permanent. All conversations, orders, KB sections, gate scans,
+          escalations, and payment recovery records will be removed.
+        </p>
+        <div className="mt-4">
+          <DeleteEventButton eventId={params.eventId} eventName={event.name} />
+        </div>
+      </div>
     </div>
   );
 }

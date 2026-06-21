@@ -1,5 +1,6 @@
 'use server';
 
+import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 
 import { createServerClient } from '@/lib/supabase/server';
@@ -139,6 +140,47 @@ export async function endEvent(
 
   revalidatePath(`/admin/events/${eventId}/setup`);
   return undefined;
+}
+
+export async function deleteEvent(
+  eventId: string,
+): Promise<{ error: string } | undefined> {
+  const supabase = createServerClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated.' };
+
+  // RLS ownership check — only succeeds if the user belongs to the operator that owns this event.
+  const { data: event, error: selectError } = await supabase
+    .from('events')
+    .select('name, operator_id')
+    .eq('id', eventId)
+    .single();
+
+  if (selectError || !event) return { error: 'Event not found.' };
+
+  const admin = createAdminClient();
+
+  // Audit with event_id = null so the row is NOT cascade-deleted when the event is removed.
+  await admin.from('audit_log').insert({
+    operator_id: event.operator_id,
+    event_id: null,
+    actor_type: 'user',
+    actor_id: user.id,
+    action: 'event.deleted',
+    entity_type: 'event',
+    entity_id: eventId,
+    metadata: { name: event.name },
+  });
+
+  const { error: deleteError } = await admin.from('events').delete().eq('id', eventId);
+
+  if (deleteError) return { error: deleteError.message };
+
+  revalidatePath('/admin/events');
+  redirect('/admin/events');
 }
 
 export async function publishEvent(
