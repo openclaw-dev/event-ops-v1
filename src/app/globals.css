@@ -59,33 +59,68 @@
 }
 
 /* Liquid glass utilities — unlayered so they override Tailwind's @layer utilities */
+
+/* Static fallback for any legacy reference */
 .admin-bg {
   background:
     radial-gradient(ellipse at top right, rgba(99, 102, 241, 0.08), transparent 60%),
     linear-gradient(to bottom right, #020617, #0f172a, #020617);
 }
 
+/* Animated gradient background */
+@keyframes gradient-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animated-bg {
+  background: linear-gradient(
+    135deg,
+    #0a0f1e 0%,
+    #0f172a 20%,
+    #1a1040 40%,
+    #0f172a 60%,
+    #0a1628 80%,
+    #0a0f1e 100%
+  );
+  background-size: 400% 400%;
+  animation: gradient-shift 18s ease infinite;
+}
+
+/* Radial colour-orb overlay — absolute so it stays inside its container */
+.animated-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 20% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 60% 10%, rgba(56, 189, 248, 0.06) 0%, transparent 40%);
+  pointer-events: none;
+  z-index: 0;
+}
+
 .glass {
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .glass-sidebar {
-  background: rgba(15, 23, 42, 0.7);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(10, 15, 30, 0.55);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border-right: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .glass-card {
-  background: rgba(255, 255, 255, 0.07);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
 }
 
 /* ===== GLASS BANNER VARIANTS ===== */
