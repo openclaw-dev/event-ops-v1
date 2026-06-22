@@ -62,7 +62,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   }));
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="dark admin-bg flex h-screen overflow-hidden">
       <Sidebar
         operators={operators}
         currentOperator={currentOperator}

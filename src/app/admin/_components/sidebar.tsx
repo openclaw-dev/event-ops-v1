@@ -26,7 +26,6 @@ import {
 
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -145,14 +144,14 @@ function EventNavItem({
         className={cn(
           'group flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors',
           isActive
-            ? 'bg-accent font-medium text-accent-foreground'
-            : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground',
+            ? 'bg-white/10 font-medium text-slate-100'
+            : 'text-slate-400 hover:bg-white/5 hover:text-slate-200',
         )}
       >
         <button
           type="button"
           onClick={onToggle}
-          className="shrink-0 rounded p-0.5 hover:bg-accent/50"
+          className="shrink-0 rounded p-0.5 hover:bg-white/10"
           aria-label={isExpanded ? 'Collapse' : 'Expand'}
         >
           <ChevronRight
@@ -165,7 +164,7 @@ function EventNavItem({
         </Link>
 
         {event.is_demo ? (
-          <span className="shrink-0 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">
+          <span className="shrink-0 rounded bg-violet-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-300">
             Demo
           </span>
         ) : (
@@ -183,7 +182,7 @@ function EventNavItem({
       </div>
 
       {isExpanded && (
-        <div className="ml-4 mt-0.5 space-y-0.5 border-l pl-2.5">
+        <div className="ml-4 mt-0.5 space-y-0.5 border-l border-white/10 pl-2.5">
           {EVENT_SUB_NAV.map(({ label, segment, icon: Icon, wip }) => {
             const href = `${base}/${segment}`;
             const isSubActive = pathname === href || pathname.startsWith(`${href}/`);
@@ -194,8 +193,8 @@ function EventNavItem({
                 className={cn(
                   'flex items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors',
                   isSubActive
-                    ? 'bg-primary/10 font-medium text-primary'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+                    ? 'bg-indigo-500/20 font-medium text-indigo-300'
+                    : 'text-slate-400 hover:bg-white/5 hover:text-slate-200',
                 )}
               >
                 <Icon className="h-3 w-3 shrink-0" />
@@ -286,13 +285,13 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
   }
 
   return (
-    <aside className="hidden md:flex h-screen w-64 shrink-0 flex-col border-r bg-background">
+    <aside className="glass-sidebar hidden md:flex h-screen w-64 shrink-0 flex-col">
       {/* Operator switcher */}
       <div className="p-3">
         <OperatorSwitcher operators={operators} current={currentOperator} />
       </div>
 
-      <Separator />
+      <div className="h-px bg-white/10" />
 
       {/* Nav */}
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
@@ -323,7 +322,7 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
+            className="w-full justify-start gap-2 text-slate-400 hover:bg-white/5 hover:text-slate-200"
             asChild
           >
             <Link href="/admin/events/new">
@@ -343,8 +342,8 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
           variant="ghost"
           size="sm"
           className={cn(
-            'w-full justify-start gap-2 text-muted-foreground hover:text-foreground',
-            pathname.startsWith('/admin/crm') && 'bg-accent text-accent-foreground',
+            'w-full justify-start gap-2 text-slate-400 hover:bg-white/5 hover:text-slate-200',
+            pathname.startsWith('/admin/crm') && 'bg-white/10 text-slate-100',
           )}
           asChild
         >
@@ -355,7 +354,7 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
         </Button>
       </nav>
 
-      <Separator />
+      <div className="h-px bg-white/10" />
 
       {/* Footer */}
       <div className="space-y-0.5 p-3">
@@ -363,8 +362,8 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
           variant="ghost"
           size="sm"
           className={cn(
-            'w-full justify-start gap-2 text-muted-foreground hover:text-foreground',
-            pathname.startsWith('/admin/settings') && 'bg-accent text-accent-foreground',
+            'w-full justify-start gap-2 text-slate-400 hover:bg-white/5 hover:text-slate-200',
+            pathname.startsWith('/admin/settings') && 'bg-white/10 text-slate-100',
           )}
           asChild
         >
@@ -376,7 +375,7 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
 
         {/* Settings sub-nav — shown when any /admin/settings route is active */}
         {pathname.startsWith('/admin/settings') && (
-          <div className="ml-4 mt-0.5 space-y-0.5 border-l pl-2.5">
+          <div className="ml-4 mt-0.5 space-y-0.5 border-l border-white/10 pl-2.5">
             {SETTINGS_SUB_NAV.map(({ label, href, icon: Icon }) => {
               const isSubActive = pathname === href || pathname.startsWith(`${href}/`);
               return (
@@ -386,8 +385,8 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
                   className={cn(
                     'flex items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors',
                     isSubActive
-                      ? 'bg-primary/10 font-medium text-primary'
-                      : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+                      ? 'bg-indigo-500/20 font-medium text-indigo-300'
+                      : 'text-slate-400 hover:bg-white/5 hover:text-slate-200',
                   )}
                 >
                   <Icon className="h-3 w-3 shrink-0" />
