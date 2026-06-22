@@ -120,7 +120,7 @@ export default async function SetupPage({ params }: SetupPageProps) {
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-semibold">Event Setup</h1>
           {isDemo && (
-            <span className="rounded bg-violet-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-violet-700">
+            <span className="rounded bg-violet-500/20 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-violet-300">
               Demo
             </span>
           )}
@@ -132,25 +132,23 @@ export default async function SetupPage({ params }: SetupPageProps) {
 
       {/* ── Status banner ──────────────────────────────────────────────────── */}
       {isPast ? (
-        <div className="mb-6 flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-          <span className="h-2 w-2 shrink-0 rounded-full bg-gray-400" />
-          <p className="text-sm text-gray-600">This event has ended.</p>
+        <div className="banner-neutral mb-6 flex items-center gap-3 px-4 py-3">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-slate-400" />
+          <p className="text-sm">This event has ended.</p>
         </div>
       ) : eventStatus === 'live' ? (
-        <div className="mb-6 flex items-center justify-between gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+        <div className="banner-success mb-6 flex items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
-            <span className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
-            <p className="text-sm text-green-700 font-medium">
-              Event is live. Support agent is active.
-            </p>
+            <span className="h-2 w-2 shrink-0 rounded-full bg-green-400" />
+            <p className="text-sm font-medium">Event is live. Support agent is active.</p>
           </div>
           <EndEventButton eventId={params.eventId} />
         </div>
       ) : (
-        <div className="mb-6 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+        <div className="banner-warning mb-6 flex items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
-            <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
-            <p className="text-sm text-amber-700">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
+            <p className="text-sm">
               This event is not published. Customers cannot reach the support agent.
             </p>
           </div>

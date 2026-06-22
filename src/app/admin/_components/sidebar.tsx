@@ -297,7 +297,7 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
         {/* Events section */}
         <div className="mb-1 px-2 py-1">
-          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          <span className="text-xs font-medium uppercase tracking-widest text-slate-500">
             Events
           </span>
         </div>
@@ -334,7 +334,7 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
 
         {/* CRM section */}
         <div className="mt-4 mb-1 px-2 py-1">
-          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          <span className="text-xs font-medium uppercase tracking-widest text-slate-500">
             Growth
           </span>
         </div>
