@@ -127,7 +127,7 @@ function LoginForm() {
 // Page wraps the form in Suspense so Next.js 14 can statically render the shell.
 export default function LoginPage() {
   return (
-    <div className="dark admin-bg flex min-h-screen items-center justify-center p-4">
+    <div className="dark admin-bg flex min-h-screen items-center justify-center p-4 text-foreground">
       <Suspense fallback={<div className="h-64 w-full max-w-sm animate-pulse rounded-lg bg-white/5" />}>
         <LoginForm />
       </Suspense>

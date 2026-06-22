@@ -80,10 +80,58 @@
 }
 
 .glass-card {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.07);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+}
+
+/* ===== DARK MODE CONTRAST FIXES ===== */
+
+/* Form inputs inside .dark — visible glass-tinted background */
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+.dark select,
+.dark textarea {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: rgb(226, 232, 240) !important; /* slate-200 */
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: rgb(100, 116, 139) !important; /* slate-500 */
+}
+
+/* Labels inside .dark */
+.dark label {
+  color: rgb(203, 213, 225); /* slate-300 */
+}
+
+/* Table text and borders inside .dark */
+.dark table {
+  color: rgb(226, 232, 240); /* slate-200 */
+}
+.dark th {
+  color: rgb(148, 163, 184); /* slate-400 */
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+.dark td {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+.dark tbody tr:hover td {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+/* Portaled Radix content (Select, Dropdown, AlertDialog) renders at document.body
+   outside .dark — safety-net background/border overrides; text handled in components */
+[data-radix-popper-content-wrapper] > * {
+  background: rgb(15, 23, 42) !important; /* slate-900 */
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* AlertDialog modal portal */
+[role="alertdialog"] {
+  background: rgb(15, 23, 42) !important; /* slate-900 */
+  border-color: rgba(255, 255, 255, 0.1) !important;
 }
