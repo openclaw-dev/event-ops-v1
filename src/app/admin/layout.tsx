@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 
 import { createServerClient } from '@/lib/supabase/server';
 import { resolveActiveOperatorId } from '@/lib/get-active-operator';
-import { Sidebar } from './_components/sidebar';
+import { AdminShell } from './_components/admin-shell';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = createServerClient();
@@ -62,15 +62,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   }));
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar
-        operators={operators}
-        currentOperator={currentOperator}
-        events={eventList}
-      />
-      <main className="flex flex-1 flex-col overflow-y-auto">
-        {children}
-      </main>
-    </div>
+    <AdminShell
+      operators={operators}
+      currentOperator={currentOperator}
+      events={eventList}
+    >
+      {children}
+    </AdminShell>
   );
 }

@@ -119,7 +119,7 @@ export function OrdersUploadForm({ eventId }: OrdersUploadFormProps) {
         <p className="text-sm font-medium">
           {uploading ? 'Importing…' : 'Drop CSV here, or click to browse'}
         </p>
-        <p className="mt-1 text-xs text-muted-foreground">Max 10 MB · 100 000 rows</p>
+        <p className="mt-1 text-xs text-muted-foreground">Max 10 MB · 100,000 rows</p>
         <input
           ref={inputRef}
           type="file"

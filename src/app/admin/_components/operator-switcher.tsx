@@ -23,16 +23,12 @@ interface OperatorSwitcherProps {
 }
 
 export function OperatorSwitcher({ operators, current }: OperatorSwitcherProps) {
-  // Single operator — no dropdown, just show the name.
+  // Single operator — static display, no menu.
   if (operators.length <= 1) {
     return (
-      <div className="rounded-lg border border-border bg-secondary px-3 py-2">
-        <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-muted text-foreground">
-            <Building2 className="h-3.5 w-3.5" />
-          </div>
-          <span className="truncate text-sm font-medium text-foreground">{current.name}</span>
-        </div>
+      <div className="flex items-center gap-2 px-2 py-1.5">
+        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="truncate text-sm font-medium text-foreground">{current.name}</span>
       </div>
     );
   }
@@ -43,15 +39,13 @@ export function OperatorSwitcher({ operators, current }: OperatorSwitcherProps) 
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-between gap-1 rounded-lg border border-border bg-secondary px-3 py-2 font-medium text-foreground hover:bg-accent hover:text-foreground"
+          className="w-full justify-between gap-1 rounded-md px-2 py-1.5 text-foreground transition-colors hover:bg-accent"
         >
-          <div className="flex items-center gap-2 truncate">
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-muted text-foreground">
-              <Building2 className="h-3.5 w-3.5" />
-            </div>
-            <span className="truncate text-sm">{current.name}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="truncate text-sm font-medium">{current.name}</span>
           </div>
-          <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>
 

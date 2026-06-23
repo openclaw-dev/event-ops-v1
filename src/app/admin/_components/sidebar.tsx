@@ -22,6 +22,7 @@ import {
   ScanLine,
   MoreHorizontal,
   Trash2,
+  PanelLeftClose,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -60,6 +61,8 @@ interface SidebarProps {
   operators: Operator[];
   currentOperator: Operator;
   events: Event[];
+  collapsed: boolean;
+  onToggle: () => void;
 }
 
 const SETTINGS_SUB_NAV = [
@@ -253,7 +256,7 @@ function EventNavItem({
   );
 }
 
-export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
+export function Sidebar({ operators, currentOperator, events, collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
 
   const activeEventId =
@@ -285,10 +288,26 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
   }
 
   return (
-    <aside className="hidden md:flex h-screen w-64 shrink-0 flex-col border-r border-border bg-card">
-      {/* Operator switcher */}
-      <div className="p-3">
-        <OperatorSwitcher operators={operators} current={currentOperator} />
+    <aside
+      className={cn(
+        'hidden md:flex h-screen shrink-0 flex-col border-r border-border bg-card overflow-hidden',
+        'motion-safe:transition-[width] motion-safe:duration-200 motion-safe:ease-out',
+        collapsed ? 'w-0 border-r-0' : 'w-64',
+      )}
+    >
+      {/* Operator switcher + collapse toggle */}
+      <div className="flex items-center gap-1 p-3">
+        <div className="min-w-0 flex-1">
+          <OperatorSwitcher operators={operators} current={currentOperator} />
+        </div>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label="Collapse sidebar"
+          className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <PanelLeftClose className="h-4 w-4" />
+        </button>
       </div>
 
       <div className="h-px bg-border" />
