@@ -26,12 +26,12 @@ export function OperatorSwitcher({ operators, current }: OperatorSwitcherProps) 
   // Single operator — no dropdown, just show the name.
   if (operators.length <= 1) {
     return (
-      <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+      <div className="rounded-lg border border-border bg-secondary px-3 py-2">
         <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-white/10 text-slate-300">
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-muted text-foreground">
             <Building2 className="h-3.5 w-3.5" />
           </div>
-          <span className="truncate text-sm font-medium text-slate-200">{current.name}</span>
+          <span className="truncate text-sm font-medium text-foreground">{current.name}</span>
         </div>
       </div>
     );
@@ -43,10 +43,10 @@ export function OperatorSwitcher({ operators, current }: OperatorSwitcherProps) 
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-between gap-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-medium text-slate-200 hover:bg-white/10 hover:text-slate-100"
+          className="w-full justify-between gap-1 rounded-lg border border-border bg-secondary px-3 py-2 font-medium text-foreground hover:bg-accent hover:text-foreground"
         >
           <div className="flex items-center gap-2 truncate">
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-white/10 text-slate-300">
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-muted text-foreground">
               <Building2 className="h-3.5 w-3.5" />
             </div>
             <span className="truncate text-sm">{current.name}</span>
@@ -56,7 +56,7 @@ export function OperatorSwitcher({ operators, current }: OperatorSwitcherProps) 
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="start" className="w-56">
-        <DropdownMenuLabel className="text-xs text-slate-400">
+        <DropdownMenuLabel className="text-xs text-muted-foreground">
           Switch operator
         </DropdownMenuLabel>
         <DropdownMenuSeparator />

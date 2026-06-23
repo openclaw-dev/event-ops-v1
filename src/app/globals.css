@@ -4,48 +4,27 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
+    /* Warm editorial palette — hex originals: bg #F7F5EF, fg #1C1B17 */
+    --background: 45 34% 95%;
+    --foreground: 48 10% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
+    --card-foreground: 48 10% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
-    --radius: 0.5rem;
-  }
-
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 214.3 31.8% 91.4%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 214.3 31.8% 91.4%;
-    --popover: 222.2 47.4% 11.2%;
-    --popover-foreground: 214.3 31.8% 91.4%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 222.2 84% 4.9%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 214.3 31.8% 91.4%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215.3 19.3% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 214.3 31.8% 91.4%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --popover-foreground: 48 10% 10%;
+    --primary: 48 10% 10%;
+    --primary-foreground: 45 34% 95%;
+    --secondary: 48 25% 92%;
+    --secondary-foreground: 48 10% 10%;
+    --muted: 48 25% 92%;
+    --muted-foreground: 41 8% 32%;
+    --accent: 46 24% 89%;
+    --accent-foreground: 48 10% 10%;
+    --destructive: 4 51% 47%;
+    --destructive-foreground: 45 34% 95%;
+    --border: 46 19% 86%;
+    --input: 46 19% 86%;
+    --ring: 48 10% 10%;
+    --radius: 0.625rem;
   }
 }
 
@@ -55,156 +34,53 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-size: 15px;
+    line-height: 1.6;
   }
 }
 
-/* Liquid glass utilities — unlayered so they override Tailwind's @layer utilities */
-
-/* Static fallback for any legacy reference */
-.admin-bg {
-  background:
-    radial-gradient(ellipse at top right, rgba(99, 102, 241, 0.08), transparent 60%),
-    linear-gradient(to bottom right, #020617, #0f172a, #020617);
+/* ===== REDUCED-MOTION TRANSITIONS ===== */
+@media (prefers-reduced-motion: no-preference) {
+  :root {
+    --transition-base: 150ms ease;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 150ms;
+    transition-timing-function: ease;
+  }
+  button:active:not(:disabled) {
+    transform: scale(0.98);
+  }
 }
 
-/* Animated gradient background */
-@keyframes gradient-shift {
-  0%   { background-position: 0% 50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-.animated-bg {
-  background: linear-gradient(
-    135deg,
-    #0a0f1e 0%,
-    #0f172a 20%,
-    #1a1040 40%,
-    #0f172a 60%,
-    #0a1628 80%,
-    #0a0f1e 100%
-  );
-  background-size: 400% 400%;
-  animation: gradient-shift 18s ease infinite;
-}
-
-/* Radial colour-orb overlay — absolute so it stays inside its container */
-.animated-bg::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse at 20% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 60% 10%, rgba(56, 189, 248, 0.06) 0%, transparent 40%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-.glass {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.glass-sidebar {
-  background: rgba(10, 15, 30, 0.55);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.glass-card {
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-}
-
-/* ===== GLASS BANNER VARIANTS ===== */
+/* ===== BANNER VARIANTS (light mode) ===== */
 
 .banner-warning {
-  background: rgba(251, 191, 36, 0.08);
-  border: 1px solid rgba(251, 191, 36, 0.2);
-  color: rgb(252, 211, 77);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #92400e;
   border-radius: 8px;
 }
 
 .banner-success {
-  background: rgba(34, 197, 94, 0.08);
-  border: 1px solid rgba(34, 197, 94, 0.2);
-  color: rgb(74, 222, 128);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(34, 197, 94, 0.10);
+  border: 1px solid rgba(22, 163, 74, 0.25);
+  color: #166534;
   border-radius: 8px;
 }
 
 .banner-info {
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px solid rgba(99, 102, 241, 0.2);
-  color: rgb(165, 180, 252);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(28, 27, 23, 0.06);
+  border: 1px solid rgba(28, 27, 23, 0.15);
+  color: hsl(var(--foreground));
   border-radius: 8px;
 }
 
 .banner-neutral {
-  background: rgba(148, 163, 184, 0.08);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  color: rgb(148, 163, 184);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(87, 83, 74, 0.08);
+  border: 1px solid rgba(87, 83, 74, 0.2);
+  color: hsl(var(--muted-foreground));
   border-radius: 8px;
-}
-
-/* ===== DARK MODE CONTRAST FIXES ===== */
-
-/* Form inputs inside .dark — visible glass-tinted background */
-.dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
-.dark select,
-.dark textarea {
-  background-color: rgba(255, 255, 255, 0.06) !important;
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  color: rgb(226, 232, 240) !important; /* slate-200 */
-}
-.dark input::placeholder,
-.dark textarea::placeholder {
-  color: rgb(100, 116, 139) !important; /* slate-500 */
-}
-
-/* Labels inside .dark */
-.dark label {
-  color: rgb(203, 213, 225); /* slate-300 */
-}
-
-/* Table text and borders inside .dark */
-.dark table {
-  color: rgb(226, 232, 240); /* slate-200 */
-}
-.dark th {
-  color: rgb(148, 163, 184); /* slate-400 */
-  border-bottom-color: rgba(255, 255, 255, 0.1);
-}
-.dark td {
-  border-bottom-color: rgba(255, 255, 255, 0.06);
-}
-.dark tbody tr:hover td {
-  background-color: rgba(255, 255, 255, 0.03);
-}
-
-/* Portaled Radix content (Select, Dropdown, AlertDialog) renders at document.body
-   outside .dark — safety-net background/border overrides; text handled in components */
-[data-radix-popper-content-wrapper] > * {
-  background: rgb(15, 23, 42) !important; /* slate-900 */
-  border-color: rgba(255, 255, 255, 0.1) !important;
-}
-
-/* AlertDialog modal portal */
-[role="alertdialog"] {
-  background: rgb(15, 23, 42) !important; /* slate-900 */
-  border-color: rgba(255, 255, 255, 0.1) !important;
 }

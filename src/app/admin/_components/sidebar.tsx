@@ -144,14 +144,14 @@ function EventNavItem({
         className={cn(
           'group flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors',
           isActive
-            ? 'bg-white/10 font-medium text-slate-100'
-            : 'text-slate-400 hover:bg-white/5 hover:text-slate-200',
+            ? 'bg-accent font-medium text-foreground'
+            : 'text-muted-foreground hover:bg-accent hover:text-foreground',
         )}
       >
         <button
           type="button"
           onClick={onToggle}
-          className="shrink-0 rounded p-0.5 hover:bg-white/10"
+          className="shrink-0 rounded p-0.5 hover:bg-accent"
           aria-label={isExpanded ? 'Collapse' : 'Expand'}
         >
           <ChevronRight
@@ -164,7 +164,7 @@ function EventNavItem({
         </Link>
 
         {event.is_demo ? (
-          <span className="shrink-0 rounded bg-violet-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-300">
+          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             Demo
           </span>
         ) : (
@@ -182,7 +182,7 @@ function EventNavItem({
       </div>
 
       {isExpanded && (
-        <div className="ml-4 mt-0.5 space-y-0.5 border-l border-white/10 pl-2.5">
+        <div className="ml-4 mt-0.5 space-y-0.5 border-l border-border pl-2.5">
           {EVENT_SUB_NAV.map(({ label, segment, icon: Icon, wip }) => {
             const href = `${base}/${segment}`;
             const isSubActive = pathname === href || pathname.startsWith(`${href}/`);
@@ -193,8 +193,8 @@ function EventNavItem({
                 className={cn(
                   'flex items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors',
                   isSubActive
-                    ? 'bg-indigo-500/20 font-medium text-indigo-300'
-                    : 'text-slate-400 hover:bg-white/5 hover:text-slate-200',
+                    ? 'bg-accent font-medium text-foreground'
+                    : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                 )}
               >
                 <Icon className="h-3 w-3 shrink-0" />
@@ -285,19 +285,19 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
   }
 
   return (
-    <aside className="glass-sidebar hidden md:flex h-screen w-64 shrink-0 flex-col">
+    <aside className="hidden md:flex h-screen w-64 shrink-0 flex-col border-r border-border bg-card">
       {/* Operator switcher */}
       <div className="p-3">
         <OperatorSwitcher operators={operators} current={currentOperator} />
       </div>
 
-      <div className="h-px bg-white/10" />
+      <div className="h-px bg-border" />
 
       {/* Nav */}
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
         {/* Events section */}
         <div className="mb-1 px-2 py-1">
-          <span className="text-xs font-medium uppercase tracking-widest text-slate-500">
+          <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
             Events
           </span>
         </div>
@@ -322,7 +322,7 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-start gap-2 text-slate-400 hover:bg-white/5 hover:text-slate-200"
+            className="w-full justify-start gap-2 text-muted-foreground hover:bg-accent hover:text-foreground"
             asChild
           >
             <Link href="/admin/events/new">
@@ -334,7 +334,7 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
 
         {/* CRM section */}
         <div className="mt-4 mb-1 px-2 py-1">
-          <span className="text-xs font-medium uppercase tracking-widest text-slate-500">
+          <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
             Growth
           </span>
         </div>
@@ -342,8 +342,8 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
           variant="ghost"
           size="sm"
           className={cn(
-            'w-full justify-start gap-2 text-slate-400 hover:bg-white/5 hover:text-slate-200',
-            pathname.startsWith('/admin/crm') && 'bg-white/10 text-slate-100',
+            'w-full justify-start gap-2 text-muted-foreground hover:bg-accent hover:text-foreground',
+            pathname.startsWith('/admin/crm') && 'bg-accent text-foreground',
           )}
           asChild
         >
@@ -354,7 +354,7 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
         </Button>
       </nav>
 
-      <div className="h-px bg-white/10" />
+      <div className="h-px bg-border" />
 
       {/* Footer */}
       <div className="space-y-0.5 p-3">
@@ -362,8 +362,8 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
           variant="ghost"
           size="sm"
           className={cn(
-            'w-full justify-start gap-2 text-slate-400 hover:bg-white/5 hover:text-slate-200',
-            pathname.startsWith('/admin/settings') && 'bg-white/10 text-slate-100',
+            'w-full justify-start gap-2 text-muted-foreground hover:bg-accent hover:text-foreground',
+            pathname.startsWith('/admin/settings') && 'bg-accent text-foreground',
           )}
           asChild
         >
@@ -375,7 +375,7 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
 
         {/* Settings sub-nav — shown when any /admin/settings route is active */}
         {pathname.startsWith('/admin/settings') && (
-          <div className="ml-4 mt-0.5 space-y-0.5 border-l border-white/10 pl-2.5">
+          <div className="ml-4 mt-0.5 space-y-0.5 border-l border-border pl-2.5">
             {SETTINGS_SUB_NAV.map(({ label, href, icon: Icon }) => {
               const isSubActive = pathname === href || pathname.startsWith(`${href}/`);
               return (
@@ -385,8 +385,8 @@ export function Sidebar({ operators, currentOperator, events }: SidebarProps) {
                   className={cn(
                     'flex items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors',
                     isSubActive
-                      ? 'bg-indigo-500/20 font-medium text-indigo-300'
-                      : 'text-slate-400 hover:bg-white/5 hover:text-slate-200',
+                      ? 'bg-accent font-medium text-foreground'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                   )}
                 >
                   <Icon className="h-3 w-3 shrink-0" />

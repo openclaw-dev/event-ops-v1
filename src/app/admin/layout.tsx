@@ -62,18 +62,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   }));
 
   return (
-    <div className="dark animated-bg relative z-0 flex h-screen overflow-hidden text-foreground">
-      {/* z-[1] wrapper lifts sidebar + main above the ::before radial overlay */}
-      <div className="relative z-[1] flex h-full w-full overflow-hidden">
-        <Sidebar
-          operators={operators}
-          currentOperator={currentOperator}
-          events={eventList}
-        />
-        <main className="flex flex-1 flex-col overflow-y-auto border-t border-white/5 bg-white/[0.02]">
-          {children}
-        </main>
-      </div>
+    <div className="flex h-screen overflow-hidden bg-background">
+      <Sidebar
+        operators={operators}
+        currentOperator={currentOperator}
+        events={eventList}
+      />
+      <main className="flex flex-1 flex-col overflow-y-auto">
+        {children}
+      </main>
     </div>
   );
 }
