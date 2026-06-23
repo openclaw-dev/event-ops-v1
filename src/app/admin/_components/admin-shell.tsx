@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { PanelLeft } from 'lucide-react';
 import { Sidebar } from './sidebar';
 
@@ -27,23 +27,35 @@ interface AdminShellProps {
 const STORAGE_KEY = 'sidebar-collapsed';
 
 export function AdminShell({ operators, currentOperator, events, children }: AdminShellProps) {
+  // Always start false — matches server render, no hydration mismatch.
   const [collapsed, setCollapsed] = useState(false);
+  // Track whether the mount-read has completed so the write effect doesn't
+  // clobber localStorage before we've read it.
+  const didMountRead = useRef(false);
 
-  // Read persisted state after mount to avoid SSR/hydration mismatch.
+  // 1. Read localStorage once after hydration.
   useEffect(() => {
-    try {
-      if (localStorage.getItem(STORAGE_KEY) === 'true') setCollapsed(true);
-    } catch {}
+    if (typeof window !== 'undefined') {
+      try {
+        if (localStorage.getItem(STORAGE_KEY) === 'true') setCollapsed(true);
+      } catch {}
+    }
+    didMountRead.current = true;
   }, []);
 
-  function toggle() {
-    setCollapsed((prev) => {
-      const next = !prev;
+  // 2. Persist collapsed state whenever it changes, but only after the
+  //    initial read has completed to avoid overwriting a stored 'true'.
+  useEffect(() => {
+    if (!didMountRead.current) return;
+    if (typeof window !== 'undefined') {
       try {
-        localStorage.setItem(STORAGE_KEY, String(next));
+        localStorage.setItem(STORAGE_KEY, String(collapsed));
       } catch {}
-      return next;
-    });
+    }
+  }, [collapsed]);
+
+  function toggle() {
+    setCollapsed((prev) => !prev);
   }
 
   return (

@@ -289,6 +289,7 @@ export function Sidebar({ operators, currentOperator, events, collapsed, onToggl
 
   return (
     <aside
+      suppressHydrationWarning
       className={cn(
         'hidden md:flex h-screen shrink-0 flex-col border-r border-border bg-card overflow-hidden',
         'motion-safe:transition-[width] motion-safe:duration-200 motion-safe:ease-out',
