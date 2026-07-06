@@ -211,27 +211,9 @@ function Wordmark() {
 function Hero() {
   return (
     <div className="relative flex flex-col overflow-hidden px-6 pb-12 pt-12 sm:px-8 lg:min-h-screen lg:px-16 lg:pb-14 lg:pt-14">
-      {/* Atmosphere — decorative, aria-hidden, layered for depth without busyness.
-          Desktop only (lg+); on mobile the live conversation is the atmosphere.
-          The warm glow is a *light* (never a shadow) so near-black text over it
-          only gains contrast; the shadow-drift and ghost sit in dead corners.
-          The ghost bleeds off the top-right corner, high and clear of the
-          headline (which sits centred on the left) — opposite-corner texture. */}
-      <div
-        aria-hidden
-        className="login-glow pointer-events-none absolute left-1/2 top-1/3 -z-10 hidden h-[42rem] w-[42rem] -translate-x-1/2 -translate-y-1/2 rounded-full lg:block"
-        style={{
-          background:
-            'radial-gradient(circle, rgba(255,251,240,0.9) 0%, rgba(255,251,240,0) 70%)',
-        }}
-      />
-      <div
-        aria-hidden
-        className="login-shadow-drift pointer-events-none absolute -bottom-1/4 -left-1/4 -z-10 hidden h-[40rem] w-[40rem] rounded-full lg:block"
-        style={{
-          background: 'radial-gradient(circle, rgba(28,27,23,0.06) 0%, rgba(28,27,23,0) 70%)',
-        }}
-      />
+      {/* The ghosted Arabic watermark bleeds off the top-right corner, high and
+          clear of the headline (which sits centred on the left) — opposite-corner
+          texture, above the living gradient field but below the text. */}
       <div
         aria-hidden
         lang="ar"
@@ -301,14 +283,61 @@ function Hero() {
   );
 }
 
+// Living gradient field: warm palette blobs drifting beneath the paper grain.
+const FIELD_BLOBS: { cls: string; style: React.CSSProperties }[] = [
+  {
+    cls: 'login-blob-a',
+    style: {
+      top: '-12%',
+      left: '-8%',
+      background: 'radial-gradient(circle, rgba(255,251,240,0.95) 0%, rgba(255,251,240,0) 68%)',
+    },
+  },
+  {
+    cls: 'login-blob-b',
+    style: {
+      top: '-18%',
+      right: '-6%',
+      background: 'radial-gradient(circle, rgba(182,150,102,0.24) 0%, rgba(182,150,102,0) 68%)',
+    },
+  },
+  {
+    cls: 'login-blob-c',
+    style: {
+      bottom: '-16%',
+      left: '2%',
+      background: 'radial-gradient(circle, rgba(40,34,24,0.07) 0%, rgba(40,34,24,0) 68%)',
+    },
+  },
+  {
+    cls: 'login-blob-d',
+    style: {
+      bottom: '-14%',
+      right: '-10%',
+      background: 'radial-gradient(circle, rgba(246,238,220,0.9) 0%, rgba(246,238,220,0) 68%)',
+    },
+  },
+];
+
+function BackgroundField() {
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+      {FIELD_BLOBS.map((b) => (
+        <div key={b.cls} className={`login-blob ${b.cls}`} style={b.style} />
+      ))}
+      {/* Fine static paper grain, layered on top of the moving light. */}
+      <div className="login-grain absolute inset-0" />
+    </div>
+  );
+}
+
 // Page wraps the form in Suspense so Next.js 14 can statically render the shell.
 // Desktop composes as one viewport: hero left; card + vignette stacked right.
 // Mobile stacks hero → vignette → card via flex order.
 export default function LoginPage() {
   return (
     <main className="relative isolate flex min-h-screen w-full flex-col bg-background lg:grid lg:grid-cols-[1.05fr_0.95fr] lg:grid-rows-2">
-      {/* Fine static paper grain across the whole surface — near-invisible depth. */}
-      <div aria-hidden className="login-grain pointer-events-none absolute inset-0 -z-10" />
+      <BackgroundField />
 
       {/* Hero — left column, spanning both rows, vertically centred. */}
       <section className="order-1 border-b border-border/60 lg:order-none lg:col-start-1 lg:row-span-2 lg:border-b-0 lg:border-r">
