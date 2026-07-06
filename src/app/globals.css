@@ -241,6 +241,37 @@
   }
 }
 
+/* Glass reflection: a soft top-left specular sheen + top edge light, seated
+   below the card content (z-index: -1 within the card's stacking context). */
+.login-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background:
+    radial-gradient(130% 80% at 14% -10%, rgba(243, 237, 225, 0.07), transparent 55%),
+    linear-gradient(180deg, rgba(243, 237, 225, 0.035), transparent 26%);
+  pointer-events: none;
+}
+
+/* Ambient signal cycle indicator: a hairline that fills across each signal's
+   lifetime, then resets with the next (re-keyed in the component). */
+@media (prefers-reduced-motion: no-preference) {
+  .login-progress {
+    transform-origin: left;
+    animation: login-progress 4920ms linear both;
+  }
+}
+@keyframes login-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
 /* ===== LOGIN — ENTRANCE CHOREOGRAPHY (once, on load) ===== */
 /* Elements are visible by default; the rise/ink reveal only exists when the
    visitor allows motion, so reduced-motion users get a static composed page.

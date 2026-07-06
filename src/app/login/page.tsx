@@ -71,7 +71,7 @@ function LoginForm() {
       {/* Glass card — integrated into the atmosphere: translucent, blurred,
           hairline gradient border with a slowly travelling light, inner top
           highlight, deep ambient shadow. */}
-      <div className="login-card rounded-2xl bg-[#171310]/55 p-8 shadow-[0_2px_10px_rgba(0,0,0,0.4),0_40px_90px_-40px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(237,230,216,0.06)] backdrop-blur-2xl">
+      <div className="login-card rounded-2xl bg-[#171310]/55 p-8 shadow-[0_2px_10px_rgba(0,0,0,0.4),0_40px_90px_-40px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(237,230,216,0.06)] backdrop-blur-2xl transition-[transform,box-shadow] duration-300 hover:-translate-y-0.5 hover:shadow-[0_2px_10px_rgba(0,0,0,0.4),0_54px_110px_-44px_rgba(0,0,0,0.95),0_0_60px_-24px_rgba(224,166,89,0.18),inset_0_1px_0_rgba(237,230,216,0.09)]">
         {sent ? (
           <div className="login-success-enter space-y-4 text-center">
             <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-[#e0a659]/30 bg-[#e0a659]/10 text-[#e0a659]">
@@ -115,7 +115,7 @@ function LoginForm() {
                 Sign in
               </h2>
               <p className="text-sm text-[#ede6d8]/55">
-                Enter your email — we&apos;ll send a magic link, no password.
+                Enter your email and we&apos;ll send a magic link.
               </p>
             </div>
 
@@ -185,111 +185,68 @@ function LoginForm() {
   );
 }
 
-function Wordmark() {
-  return (
-    <div className="login-rise flex items-center gap-2" style={{ animationDelay: '40ms' }}>
-      <span className="font-serif text-2xl leading-none tracking-tight text-[#f3ede1]">
-        tazkar
-        <span className="font-bold text-[#e0a659]">.</span>
-        <span className="text-[#ede6d8]/55">co</span>
-      </span>
-      <span
-        className={`${arabic.className} translate-y-[1px] text-base leading-none text-[#ede6d8]/35`}
-        dir="rtl"
-        lang="ar"
-        aria-hidden
-      >
-        تذكرة
-      </span>
-    </div>
-  );
-}
-
 function Hero() {
   return (
-    <div className="relative flex flex-col overflow-hidden px-6 pb-14 pt-14 sm:px-8 lg:min-h-screen lg:px-16">
-      {/* Ghosted Arabic watermark — a faint glowing mark in the empty top-right,
-          well clear of the headline; parallax handled by the wrapping layer. */}
+    <div className="relative flex min-h-[86vh] flex-col overflow-hidden px-6 pb-16 pt-24 sm:px-8 lg:min-h-screen lg:px-16 lg:pb-[13vh] lg:pt-14">
+      {/* Ghosted Arabic watermark — a faint glowing mark, high in the empty
+          negative space; parallax handled by the wrapping layer. */}
       <div
         aria-hidden
-        data-parallax="18"
-        className="login-parallax pointer-events-none absolute -right-[20%] -top-[13%] -z-[1] hidden lg:block"
+        className="login-parallax-lg pointer-events-none absolute -right-[18%] -top-[16%] -z-[1] hidden lg:block"
       >
         <div
           lang="ar"
           dir="rtl"
-          className={`${arabic.className} login-ghost select-none whitespace-nowrap font-bold leading-none text-[#e9ddc8]/[0.06] [text-shadow:0_0_60px_rgba(224,166,89,0.12)]`}
-          style={{ fontSize: 'clamp(11rem, 18vw, 20rem)' }}
+          className={`${arabic.className} login-ghost select-none whitespace-nowrap font-bold leading-none text-[#e9ddc8]/[0.05] [text-shadow:0_0_60px_rgba(224,166,89,0.10)]`}
+          style={{ fontSize: 'clamp(11rem, 17vw, 19rem)' }}
         >
           تذكرة
         </div>
       </div>
 
-      <header className="relative z-10">
-        <Wordmark />
-      </header>
+      {/* Content is anchored to the lower-left, leaving deliberate negative
+          space above — editorial composition, not a centred block. */}
+      <div className="login-parallax-sm relative z-10 mt-auto max-w-xl">
+        <h1 className="font-serif text-[2.75rem] font-normal leading-[0.98] tracking-[-0.025em] text-[#f4efe4] [filter:drop-shadow(0_2px_28px_rgba(224,166,89,0.12))] sm:text-6xl lg:text-[4.6rem]">
+          <span className="login-line">
+            <span className="login-line-inner" style={{ animationDelay: '200ms' }}>
+              Recover failed payments.
+            </span>
+          </span>
+          <span className="login-line">
+            <span className="login-line-inner" style={{ animationDelay: '320ms' }}>
+              Deflect refunds.
+            </span>
+          </span>
+          <span className="login-line">
+            <span
+              className="login-line-inner italic text-[#f0e6d4]"
+              style={{ animationDelay: '460ms' }}
+            >
+              Support every fan.
+            </span>
+          </span>
+        </h1>
+        <p
+          className="login-rise mt-7 max-w-md text-base leading-relaxed text-[#ede6d8]/60"
+          style={{ animationDelay: '660ms' }}
+        >
+          An AI operations agent that lives on WhatsApp. Fluent in Arabic, English, and Russian,
+          working every conversation your team can&apos;t reach.
+        </p>
 
-      <div className="relative z-10 mt-12 lg:mt-0 lg:flex lg:flex-1 lg:flex-col lg:justify-center">
-        <div className="max-w-xl">
-          <p
-            className="login-rise mb-5 flex items-center gap-2.5 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#ede6d8]/45"
-            style={{ animationDelay: '140ms' }}
-          >
-            <span className="inline-block h-px w-6 bg-[#e0a659]/60" aria-hidden />
-            AI operations · GCC live events
-          </p>
-          <h1 className="font-serif text-[2.7rem] font-normal leading-[1.0] tracking-[-0.02em] text-[#f4efe4] sm:text-6xl lg:text-[4.4rem]">
-            <span className="login-line">
-              <span className="login-line-inner" style={{ animationDelay: '240ms' }}>
-                Recover failed payments.
-              </span>
+        {/* Capabilities as a quiet editorial line, not feature pills. */}
+        <p
+          className="login-rise mt-9 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] font-medium uppercase tracking-[0.26em] text-[#ede6d8]/40"
+          style={{ animationDelay: '780ms' }}
+        >
+          {CAPABILITIES.map((label, i) => (
+            <span key={label} className="inline-flex items-center gap-x-3">
+              {i > 0 && <span className="text-[#e0a659]/45">/</span>}
+              {label}
             </span>
-            <span className="login-line">
-              <span className="login-line-inner" style={{ animationDelay: '330ms' }}>
-                Deflect refunds.
-              </span>
-            </span>
-            <span className="login-line">
-              <span
-                className="login-line-inner italic text-[#f4efe4]/95"
-                style={{ animationDelay: '420ms' }}
-              >
-                Support every fan.
-              </span>
-            </span>
-          </h1>
-          <p
-            className="login-rise mt-6 max-w-md text-base leading-relaxed text-[#ede6d8]/60"
-            style={{ animationDelay: '560ms' }}
-          >
-            An AI operations agent that lives on WhatsApp — fluent in Arabic, English, and Russian,
-            working every conversation your team can&apos;t reach.
-          </p>
-
-          <div
-            className="login-rise mt-8 flex flex-wrap items-center gap-2"
-            style={{ animationDelay: '660ms' }}
-          >
-            {CAPABILITIES.map((label) => (
-              <span
-                key={label}
-                className="rounded-full border border-[#ede6d8]/12 bg-[#ede6d8]/[0.03] px-3 py-1 text-xs font-medium text-[#ede6d8]/70"
-              >
-                {label}
-              </span>
-            ))}
-            <span className="ml-1 inline-flex items-center gap-1.5">
-              {['EN', 'AR', 'RU'].map((lang) => (
-                <span
-                  key={lang}
-                  className="rounded border border-[#e0a659]/30 bg-[#e0a659]/10 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-[#e6b673]"
-                >
-                  {lang}
-                </span>
-              ))}
-            </span>
-          </div>
-        </div>
+          ))}
+        </p>
       </div>
     </div>
   );
@@ -362,38 +319,39 @@ export default function LoginPage() {
   return (
     <main
       ref={mainRef}
-      className="relative isolate flex min-h-screen w-full flex-col bg-[#0b0908] text-[#ede6d8] lg:grid lg:grid-cols-[1.08fr_0.92fr] lg:grid-rows-2"
+      className="relative isolate flex min-h-screen w-full flex-col bg-[#0b0908] text-[#ede6d8] lg:grid lg:grid-cols-[1.15fr_0.85fr]"
     >
-      {/* Living cinematic atmosphere behind everything. */}
+      {/* Living cinematic atmosphere behind everything, one continuous
+          environment (no dividing chrome). */}
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
         <CinematicBackground className="absolute inset-0" />
         <AtmosphereOverlays />
       </div>
 
-      {/* Hero — left column, spanning both rows, vertically centred. */}
-      <section className="order-1 lg:order-none lg:col-start-1 lg:row-span-2 lg:border-r lg:border-[#ede6d8]/8">
+      {/* Hero — left column; content anchored lower-left with negative space. */}
+      <section className="order-1 lg:order-none lg:col-start-1">
         <Hero />
       </section>
 
-      {/* Sign-in card — right column, upper row, seated toward the centre. */}
-      <section className="order-2 flex justify-center px-6 pb-8 pt-2 sm:px-8 lg:order-none lg:col-start-2 lg:row-start-1 lg:items-end lg:px-10 lg:pb-5 lg:pt-14">
-        <Suspense
-          fallback={
-            <div className="h-72 w-full max-w-sm animate-pulse rounded-2xl bg-[#ede6d8]/5" />
-          }
-        >
-          <LoginForm />
-        </Suspense>
-      </section>
-
-      {/* Ambient operational signals — right column, lower row. */}
-      <section className="order-3 flex justify-center px-6 pb-[calc(3rem+env(safe-area-inset-bottom))] pt-4 sm:px-8 lg:order-none lg:col-start-2 lg:row-start-2 lg:items-start lg:px-10 lg:pb-14 lg:pt-6">
-        <div
-          className="login-rise login-parallax w-full max-w-sm"
-          data-parallax="6"
-          style={{ animationDelay: '760ms' }}
-        >
-          <AmbientSignals arabicClassName={arabic.className} className="w-full" />
+      {/* Right column: sign-in card seated high, ambient signals below it —
+          an editorial diagonal against the hero's low-left anchor. On mobile it
+          simply follows the hero (hero → card → signals). */}
+      <section className="order-2 flex flex-col px-6 pb-[calc(3rem+env(safe-area-inset-bottom))] pt-2 sm:px-8 lg:order-none lg:col-start-2 lg:h-screen lg:justify-start lg:gap-14 lg:px-12 lg:pb-10 lg:pt-[14vh]">
+        <div className="flex justify-center lg:justify-start">
+          <Suspense
+            fallback={
+              <div className="h-72 w-full max-w-sm animate-pulse rounded-2xl bg-[#ede6d8]/5" />
+            }
+          >
+            <LoginForm />
+          </Suspense>
+        </div>
+        <div className="mt-10 flex justify-center lg:mt-0 lg:justify-start">
+          <div className="login-parallax-sm w-full max-w-sm">
+            <div className="login-rise" style={{ animationDelay: '820ms' }}>
+              <AmbientSignals arabicClassName={arabic.className} className="w-full" />
+            </div>
+          </div>
         </div>
       </section>
     </main>

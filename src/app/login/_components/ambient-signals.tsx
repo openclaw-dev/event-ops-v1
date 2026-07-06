@@ -23,11 +23,11 @@ type Signal = {
 };
 
 const SIGNALS: Signal[] = [
-  { label: 'WhatsApp · EN', text: 'Doors open at 7 PM — arrive early to skip the queue.' },
-  { label: 'Payment recovery', text: 'Failed payment detected — secure retry link sent.' },
-  { label: 'WhatsApp · AR', lang: 'ar', text: 'بالطبع — سأحوّل تذكرتك إلى صديقك خلال دقائق.' },
-  { label: 'Refund deflection', text: 'Refund request → VIP upgrade offered instead.' },
-  { label: 'WhatsApp · RU', text: 'Вместо возврата — кредит на следующий концерт.' },
+  { label: 'WhatsApp · EN', text: 'Doors open at 7 PM. Arrive early to skip the queue.' },
+  { label: 'Payment recovery', text: 'Failed payment detected. Secure retry link sent.' },
+  { label: 'WhatsApp · AR', lang: 'ar', text: 'بالطبع، سأحوّل تذكرتك إلى صديقك خلال دقائق.' },
+  { label: 'Refund deflection', text: 'Refund request met with a VIP upgrade offer.' },
+  { label: 'WhatsApp · RU', text: 'Вместо возврата, кредит на следующий концерт.' },
 ];
 
 const HOLD = 4200;
@@ -97,8 +97,8 @@ export function AmbientSignals({
       <div className="relative min-h-[92px] border-l border-[#ede6d8]/12 pl-5">
         <div
           key={index}
-          className={`transition-all duration-700 ease-out ${
-            on ? 'translate-y-0 opacity-100 blur-0' : '-translate-y-1.5 opacity-0 blur-[1px]'
+          className={`transition-all duration-[820ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+            on ? 'translate-y-0 opacity-100 blur-0' : 'translate-y-2 opacity-0 blur-[2px]'
           }`}
         >
           <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.2em] text-[#e0a659]/70">
@@ -113,6 +113,14 @@ export function AmbientSignals({
             {sig.text}
           </p>
         </div>
+      </div>
+
+      {/* Cycle indicator — a hairline that fills across each signal's lifetime. */}
+      <div className="mt-5 ml-5 h-px w-full max-w-[30ch] overflow-hidden rounded-full bg-[#ede6d8]/8">
+        <div
+          key={index}
+          className="login-progress h-full w-full bg-gradient-to-r from-[#e0a659]/55 to-[#e0a659]/5"
+        />
       </div>
     </div>
   );

@@ -62,47 +62,50 @@ void main() {
   vec2 p = uv;
   p.x *= aspect;
 
-  float t = uTime * 0.025;
+  float t = uTime * 0.02;
 
-  // domain warping — layered flow, the "fluid" feel
-  vec2 q = vec2(fbm(p + vec2(0.0, t)), fbm(p + vec2(5.2, 1.3) - t));
-  vec2 r = vec2(
-    fbm(p + 1.6 * q + vec2(1.7, 9.2) + 0.15 * t),
-    fbm(p + 1.6 * q + vec2(8.3, 2.8) - 0.12 * t)
-  );
-  float f = fbm(p + 2.0 * r);
+  // Layer 1 — slow macro masses (domain-warped) define the big light/dark
+  // volumes. This is the "environment": where fog gathers and thins.
+  vec2 q = vec2(fbm(p * 0.85 + vec2(0.0, t)), fbm(p * 0.85 + vec2(3.4, 1.2) - t));
+  float macro = fbm(p * 0.85 + 1.6 * q + vec2(0.0, t * 0.6));
 
-  // warm dark palette: near-black espresso -> warm charcoal -> deep amber-brown.
-  // Deeper base + tighter highlight ramp gives cinematic contrast (shadow
-  // pockets + focused warm blooms) rather than a flat sepia wash.
-  vec3 c1 = vec3(0.024, 0.019, 0.015);
-  vec3 c2 = vec3(0.082, 0.063, 0.045);
-  vec3 c3 = vec3(0.275, 0.178, 0.101);
-  vec3 col = mix(c1, c2, clamp(f * 1.15, 0.0, 1.0));
-  col = mix(col, c3, clamp(pow(f, 2.6) * 1.5, 0.0, 1.0));
+  // Layer 2 — faster fine detail, a different movement speed for depth.
+  float detail = fbm(p * 2.6 + vec2(t * 2.2, -t * 1.7));
 
-  // faint upper light source (soft ivory diffusion, drifting)
-  vec2 lc = vec2(0.5 * aspect + 0.18 * sin(t * 1.2), 0.28 + 0.05 * cos(t * 0.9));
-  float dl = distance(p, lc);
-  col += vec3(0.16, 0.13, 0.09) * exp(-dl * dl * 2.2) * (0.5 + 0.5 * r.x);
+  float dens = clamp(macro * 0.82 + detail * 0.28, 0.0, 1.0);
 
-  // mouse-reactive warm ember bloom
+  // near-black espresso -> warm charcoal -> deep amber, tight ramp = contrast
+  vec3 shadow = vec3(0.013, 0.010, 0.008);
+  vec3 mid = vec3(0.070, 0.053, 0.038);
+  vec3 warm = vec3(0.262, 0.166, 0.094);
+  vec3 col = mix(shadow, mid, smoothstep(0.10, 0.72, dens));
+  col = mix(col, warm, smoothstep(0.60, 0.98, dens) * 0.85);
+
+  // Asymmetric focal key light, low-left behind the headline. Modulated by the
+  // macro mass so it reads volumetric rather than a flat radial.
+  vec2 key = vec2(0.34 * aspect + 0.05 * sin(t * 0.7), 0.56 + 0.04 * cos(t * 0.55));
+  float kd = distance(p, key);
+  col += vec3(0.30, 0.19, 0.10) * exp(-kd * kd * 1.5) * (0.4 + 0.75 * macro);
+
+  // Faint secondary bloom, upper-right near the card. Very restrained.
+  vec2 s2 = vec2(0.84 * aspect, 0.82);
+  float sd = distance(p, s2);
+  col += vec3(0.11, 0.085, 0.05) * exp(-sd * sd * 2.8) * (0.3 + 0.4 * detail);
+
+  // Signature: the cursor casts a soft warm light into the room.
   vec2 m = uMouse;
   m.x *= aspect;
   float dm = distance(p, m);
-  col += vec3(0.28, 0.17, 0.08) * exp(-dm * dm * 3.0) * (0.45 + 0.4 * f);
-
-  // ember specks riding the flow (very restrained)
-  float ember = smoothstep(0.72, 0.98, f + 0.15 * r.y);
-  col += vec3(0.32, 0.19, 0.09) * ember * 0.5;
+  col += vec3(0.34, 0.21, 0.10) * exp(-dm * dm * 2.0) * (0.5 + 0.5 * detail);
 
   // film grain
-  float g = hash(gl_FragCoord.xy + fract(uTime) * 43.1) - 0.5;
-  col += g * 0.055;
+  float g = hash(gl_FragCoord.xy + fract(uTime) * 51.7) - 0.5;
+  col += g * 0.05;
 
-  // cinematic vignette
-  float vig = smoothstep(1.1, 0.3, distance(uv, vec2(0.5)));
-  col *= mix(0.5, 1.0, vig);
+  // deep cinematic vignette + darker top (a void of negative space above)
+  float vig = smoothstep(1.18, 0.26, distance(uv, vec2(0.5)));
+  col *= mix(0.4, 1.0, vig);
+  col *= mix(1.0, 0.72, smoothstep(0.46, 1.0, uv.y));
 
   gl_FragColor = vec4(col, 1.0);
 }
