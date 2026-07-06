@@ -55,6 +55,61 @@
   }
 }
 
+/* ===== LOGIN ATMOSPHERE ===== */
+/* All motion is opt-in: static by default, animated only when the visitor
+   has no reduced-motion preference. Decorative layers are aria-hidden and
+   never sit behind headline/form text (see login/page.tsx layout notes). */
+
+.login-error-enter {
+  animation: login-error-in 240ms ease both;
+}
+
+@keyframes login-error-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.login-success-enter {
+  animation: login-error-in 320ms ease both;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Slow warm-light breathing behind the cover panel. */
+  .login-glow {
+    animation: login-glow 16s ease-in-out infinite alternate;
+  }
+  /* Near-imperceptible drift of the ghosted Arabic watermark. */
+  .login-ghost {
+    animation: login-ghost-drift 34s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes login-glow {
+  from {
+    opacity: 0.5;
+    transform: translate3d(-2%, -1%, 0) scale(1);
+  }
+  to {
+    opacity: 0.85;
+    transform: translate3d(2%, 1%, 0) scale(1.08);
+  }
+}
+
+@keyframes login-ghost-drift {
+  from {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  to {
+    transform: translate3d(1.5%, -1.5%, 0) rotate(-1.2deg);
+  }
+}
+
 /* ===== BANNER VARIANTS (light mode) ===== */
 
 .banner-warning {
