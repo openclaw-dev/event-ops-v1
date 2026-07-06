@@ -6,19 +6,21 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Amiri } from 'next/font/google';
-import { ArrowRight, Loader2, MailCheck } from 'lucide-react';
+import { ArrowRight, Loader2 } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ConversationVignette } from './_components/conversation-vignette';
 
-// Amiri is loaded ONLY for the single ghosted Arabic watermark below.
-// Newsreader (the display serif) has no Arabic glyphs and would silently
-// fall back to a per-machine system font. Do not use this anywhere else.
+// Amiri is the login page's Arabic typeface — Newsreader (the display serif)
+// and Inter (the UI sans) have no Arabic glyphs and would fall back to a
+// per-machine system font. It is used ONLY for Arabic text here: the ghosted
+// watermark, the wordmark companion glyph, and the Arabic demo message.
 const arabic = Amiri({
   subsets: ['arabic'],
-  weight: '700',
+  weight: ['400', '700'],
   display: 'swap',
 });
 
@@ -65,14 +67,27 @@ function LoginForm() {
   }
 
   return (
-    <div className="w-full max-w-sm">
-      {/* Card: refined layered depth on warm paper — soft shadow + hairline. */}
-      <div className="rounded-2xl border border-border/70 bg-card p-8 shadow-[0_1px_3px_rgba(28,27,23,0.04),0_18px_44px_-20px_rgba(28,27,23,0.22)]">
+    <div className="login-rise w-full max-w-sm" style={{ animationDelay: '240ms' }}>
+      {/* Card: two-layer depth on warm paper — hairline seat + soft ambient lift. */}
+      <div className="rounded-2xl border border-border/70 bg-card p-8 shadow-[0_0_0_1px_rgba(28,27,23,0.03),0_2px_6px_-1px_rgba(28,27,23,0.06),0_28px_60px_-28px_rgba(28,27,23,0.30)]">
         {sent ? (
           <div className="login-success-enter space-y-4 text-center">
-            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <MailCheck className="h-5 w-5" />
-            </div>
+            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              {/* Envelope that draws itself in via SVG stroke animation. */}
+              <svg
+                viewBox="0 0 48 48"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="login-draw h-6 w-6"
+                aria-hidden
+              >
+                <rect x="8" y="13" width="32" height="22" rx="3" />
+                <path d="M9 16 L24 27 L39 16" />
+              </svg>
+            </span>
             <div className="space-y-1.5">
               <h2 className="font-serif text-2xl leading-tight text-foreground">Check your inbox</h2>
               <p className="text-sm leading-relaxed text-muted-foreground">
@@ -104,20 +119,19 @@ function LoginForm() {
             </div>
 
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
-              <div className="space-y-1.5">
+              <div className="group space-y-1.5">
                 <Label
                   htmlFor="email"
-                  className="text-xs font-medium tracking-wide text-muted-foreground"
+                  className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground transition-all duration-200 group-focus-within:-translate-y-px group-focus-within:text-foreground"
                 >
-                  EMAIL ADDRESS
+                  Email address
                 </Label>
                 <Input
                   id="email"
                   type="email"
                   placeholder="you@company.com"
                   autoComplete="email"
-                  autoFocus
-                  className="h-11 bg-background transition-shadow focus-visible:shadow-[0_0_0_4px_rgba(28,27,23,0.06)]"
+                  className="h-11 bg-background transition-[box-shadow,border-color] duration-200 focus-visible:border-foreground focus-visible:shadow-[0_0_0_4px_rgba(28,27,23,0.10)] focus-visible:ring-0 focus-visible:ring-offset-0"
                   {...register('email')}
                   aria-invalid={!!errors.email}
                 />
@@ -138,7 +152,7 @@ function LoginForm() {
               <Button
                 type="submit"
                 disabled={isSubmitting}
-                className="group h-11 w-full text-sm font-medium shadow-sm transition-all hover:shadow-md disabled:opacity-70"
+                className="group h-11 w-full text-sm font-medium shadow-sm transition-all hover:-translate-y-px hover:shadow-md active:translate-y-0 disabled:opacity-70"
               >
                 {isSubmitting ? (
                   <>
@@ -171,14 +185,36 @@ function LoginForm() {
   );
 }
 
+function Wordmark() {
+  return (
+    <div
+      className="login-rise flex items-center gap-2"
+      style={{ animationDelay: '40ms' }}
+    >
+      <span className="font-serif text-2xl leading-none tracking-tight text-foreground">
+        tazkar
+        <span className="font-bold text-foreground">.</span>
+        <span className="text-muted-foreground">co</span>
+      </span>
+      <span
+        className={`${arabic.className} translate-y-[1px] text-base leading-none text-muted-foreground/55`}
+        dir="rtl"
+        lang="ar"
+        aria-hidden
+      >
+        تذكرة
+      </span>
+    </div>
+  );
+}
+
 function Cover() {
   return (
-    <div className="relative flex min-h-full flex-col overflow-hidden px-8 py-10 lg:px-16 lg:py-14">
-      {/* Atmosphere — decorative, aria-hidden, confined to dead space.
-          Rendered on lg+ only. The warm glow is a *light* (never a shadow), so
-          near-black text over it only gains contrast. The ghosted Arabic word
-          is anchored to the empty lower-right corner, bleeding off-canvas, so it
-          never sits behind the (left-aligned) headline, subhead, or chips. */}
+    <div className="relative flex flex-col overflow-hidden px-6 pb-12 pt-12 sm:px-8 lg:min-h-screen lg:px-16 lg:pb-14 lg:pt-14">
+      {/* Atmosphere — decorative, aria-hidden, layered for depth without busyness.
+          Desktop only (lg+); on mobile the live conversation is the atmosphere.
+          The warm glow is a *light* (never a shadow) so near-black text over it
+          only gains contrast; the shadow-drift and ghost sit in dead corners. */}
       <div
         aria-hidden
         className="login-glow pointer-events-none absolute left-1/2 top-1/3 -z-10 hidden h-[42rem] w-[42rem] -translate-x-1/2 -translate-y-1/2 rounded-full lg:block"
@@ -189,57 +225,78 @@ function Cover() {
       />
       <div
         aria-hidden
+        className="login-shadow-drift pointer-events-none absolute -bottom-1/4 -left-1/4 -z-10 hidden h-[40rem] w-[40rem] rounded-full lg:block"
+        style={{
+          background: 'radial-gradient(circle, rgba(28,27,23,0.06) 0%, rgba(28,27,23,0) 70%)',
+        }}
+      />
+      <div
+        aria-hidden
         lang="ar"
         dir="rtl"
-        className={`${arabic.className} login-ghost pointer-events-none absolute -right-[16%] -top-[10%] -z-10 hidden select-none whitespace-nowrap leading-none text-foreground/[0.045] lg:block`}
+        className={`${arabic.className} login-ghost pointer-events-none absolute -right-[16%] -top-[10%] -z-10 hidden select-none whitespace-nowrap font-bold leading-none text-foreground/[0.045] lg:block`}
         style={{ fontSize: 'clamp(12rem, 20vw, 22rem)' }}
       >
         تذكرة
       </div>
 
-      {/* Wordmark */}
-      <div className="relative z-10">
-        <span className="font-serif text-xl tracking-tight text-foreground">tazkar</span>
-        <span className="font-serif text-xl text-muted-foreground">.co</span>
-      </div>
+      <header className="relative z-10">
+        <Wordmark />
+      </header>
 
-      {/* Cover message */}
-      <div className="relative z-10 mt-12 max-w-xl lg:mt-auto lg:pb-4">
-        <p className="mb-5 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-          Revenue operations for GCC event operators
-        </p>
-        <h1 className="font-serif text-4xl leading-[1.05] tracking-tight text-foreground sm:text-5xl lg:text-6xl">
-          Recover failed payments.
-          <br />
-          Deflect refunds.
-          <br />
-          <span className="italic">Support every fan.</span>
-        </h1>
-        <p className="mt-6 max-w-md text-base leading-relaxed text-muted-foreground">
-          An AI operations agent that lives on WhatsApp — fluent in Arabic, English, and Russian,
-          working every conversation your team can&apos;t reach.
-        </p>
-
-        {/* Real trust indicators — capabilities + supported languages. */}
-        <div className="mt-8 flex flex-wrap items-center gap-2">
-          {CAPABILITIES.map((label) => (
-            <span
-              key={label}
-              className="rounded-full border border-border bg-card/60 px-3 py-1 text-xs font-medium text-foreground/80"
-            >
-              {label}
+      <div className="relative z-10 mt-10 flex flex-col gap-9 lg:mt-0 lg:flex-1 lg:justify-center lg:gap-11">
+        <div className="max-w-xl">
+          <p
+            className="login-rise mb-5 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground"
+            style={{ animationDelay: '120ms' }}
+          >
+            Revenue operations for GCC event operators
+          </p>
+          <h1 className="font-serif text-[2.6rem] font-normal leading-[1.02] tracking-[-0.02em] text-foreground sm:text-6xl lg:text-[4.25rem]">
+            <span className="login-rise block" style={{ animationDelay: '190ms' }}>
+              Recover failed payments.
             </span>
-          ))}
-          <span className="ml-1 inline-flex items-center gap-1.5">
-            {['EN', 'AR', 'RU'].map((lang) => (
+            <span className="login-rise block" style={{ animationDelay: '260ms' }}>
+              Deflect refunds.
+            </span>
+            <span className="login-ink block italic">Support every fan.</span>
+          </h1>
+          <p
+            className="login-rise mt-6 max-w-md text-base leading-relaxed text-muted-foreground"
+            style={{ animationDelay: '400ms' }}
+          >
+            An AI operations agent that lives on WhatsApp — fluent in Arabic, English, and Russian,
+            working every conversation your team can&apos;t reach.
+          </p>
+
+          {/* Real trust indicators — capabilities + supported languages. */}
+          <div
+            className="login-rise mt-8 flex flex-wrap items-center gap-2"
+            style={{ animationDelay: '470ms' }}
+          >
+            {CAPABILITIES.map((label) => (
               <span
-                key={lang}
-                className="rounded bg-primary px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-primary-foreground"
+                key={label}
+                className="rounded-full border border-border bg-card/60 px-3 py-1 text-xs font-medium text-foreground/80"
               >
-                {lang}
+                {label}
               </span>
             ))}
-          </span>
+            <span className="ml-1 inline-flex items-center gap-1.5">
+              {['EN', 'AR', 'RU'].map((lang) => (
+                <span
+                  key={lang}
+                  className="rounded bg-primary px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-primary-foreground"
+                >
+                  {lang}
+                </span>
+              ))}
+            </span>
+          </div>
+        </div>
+
+        <div className="login-rise" style={{ animationDelay: '540ms' }}>
+          <ConversationVignette arabicClassName={arabic.className} className="max-w-md" />
         </div>
       </div>
     </div>
@@ -249,14 +306,17 @@ function Cover() {
 // Page wraps the form in Suspense so Next.js 14 can statically render the shell.
 export default function LoginPage() {
   return (
-    <main className="relative min-h-screen w-full bg-background lg:grid lg:grid-cols-[1.05fr_0.95fr]">
+    <main className="relative isolate min-h-screen w-full bg-background lg:grid lg:grid-cols-[1.05fr_0.95fr]">
+      {/* Fine static paper grain across the whole surface — near-invisible depth. */}
+      <div aria-hidden className="login-grain pointer-events-none absolute inset-0 -z-10" />
+
       {/* Left: the cover of the magazine. Hairline divider on lg. */}
       <section className="border-b border-border/60 lg:border-b-0 lg:border-r">
         <Cover />
       </section>
 
       {/* Right: the act of entering. */}
-      <section className="flex items-center justify-center px-6 py-14 lg:py-0">
+      <section className="flex items-center justify-center px-6 pb-[calc(3.5rem+env(safe-area-inset-bottom))] pt-6 sm:px-8 lg:min-h-screen lg:py-0 lg:pb-0">
         <Suspense
           fallback={<div className="h-72 w-full max-w-sm animate-pulse rounded-2xl bg-muted" />}
         >
