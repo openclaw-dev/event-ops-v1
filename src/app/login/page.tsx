@@ -208,13 +208,15 @@ function Wordmark() {
   );
 }
 
-function Cover() {
+function Hero() {
   return (
     <div className="relative flex flex-col overflow-hidden px-6 pb-12 pt-12 sm:px-8 lg:min-h-screen lg:px-16 lg:pb-14 lg:pt-14">
       {/* Atmosphere — decorative, aria-hidden, layered for depth without busyness.
           Desktop only (lg+); on mobile the live conversation is the atmosphere.
           The warm glow is a *light* (never a shadow) so near-black text over it
-          only gains contrast; the shadow-drift and ghost sit in dead corners. */}
+          only gains contrast; the shadow-drift and ghost sit in dead corners.
+          The ghost bleeds off the top-right corner, high and clear of the
+          headline (which sits centred on the left) — opposite-corner texture. */}
       <div
         aria-hidden
         className="login-glow pointer-events-none absolute left-1/2 top-1/3 -z-10 hidden h-[42rem] w-[42rem] -translate-x-1/2 -translate-y-1/2 rounded-full lg:block"
@@ -234,8 +236,8 @@ function Cover() {
         aria-hidden
         lang="ar"
         dir="rtl"
-        className={`${arabic.className} login-ghost pointer-events-none absolute -right-[16%] -top-[10%] -z-10 hidden select-none whitespace-nowrap font-bold leading-none text-foreground/[0.045] lg:block`}
-        style={{ fontSize: 'clamp(12rem, 20vw, 22rem)' }}
+        className={`${arabic.className} login-ghost pointer-events-none absolute -right-[20%] -top-[13%] -z-10 hidden select-none whitespace-nowrap font-bold leading-none text-foreground/[0.05] lg:block`}
+        style={{ fontSize: 'clamp(11rem, 18vw, 20rem)' }}
       >
         تذكرة
       </div>
@@ -244,15 +246,15 @@ function Cover() {
         <Wordmark />
       </header>
 
-      <div className="relative z-10 mt-10 flex flex-col gap-9 lg:mt-0 lg:flex-1 lg:justify-center lg:gap-11">
+      <div className="relative z-10 mt-10 lg:mt-0 lg:flex lg:flex-1 lg:flex-col lg:justify-center">
         <div className="max-w-xl">
           <p
-            className="login-rise mb-5 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground"
+            className="login-rise mb-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground"
             style={{ animationDelay: '120ms' }}
           >
             Revenue operations for GCC event operators
           </p>
-          <h1 className="font-serif text-[2.6rem] font-normal leading-[1.02] tracking-[-0.02em] text-foreground sm:text-6xl lg:text-[4.25rem]">
+          <h1 className="font-serif text-[2.6rem] font-normal leading-[1.0] tracking-[-0.02em] text-foreground sm:text-6xl lg:text-[4.25rem]">
             <span className="login-rise block" style={{ animationDelay: '190ms' }}>
               Recover failed payments.
             </span>
@@ -262,7 +264,7 @@ function Cover() {
             <span className="login-ink block italic">Support every fan.</span>
           </h1>
           <p
-            className="login-rise mt-6 max-w-md text-base leading-relaxed text-muted-foreground"
+            className="login-rise mt-5 max-w-md text-base leading-relaxed text-muted-foreground"
             style={{ animationDelay: '400ms' }}
           >
             An AI operations agent that lives on WhatsApp — fluent in Arabic, English, and Russian,
@@ -271,7 +273,7 @@ function Cover() {
 
           {/* Real trust indicators — capabilities + supported languages. */}
           <div
-            className="login-rise mt-8 flex flex-wrap items-center gap-2"
+            className="login-rise mt-6 flex flex-wrap items-center gap-2"
             style={{ animationDelay: '470ms' }}
           >
             {CAPABILITIES.map((label) => (
@@ -294,34 +296,39 @@ function Cover() {
             </span>
           </div>
         </div>
-
-        <div className="login-rise" style={{ animationDelay: '540ms' }}>
-          <ConversationVignette arabicClassName={arabic.className} className="max-w-md" />
-        </div>
       </div>
     </div>
   );
 }
 
 // Page wraps the form in Suspense so Next.js 14 can statically render the shell.
+// Desktop composes as one viewport: hero left; card + vignette stacked right.
+// Mobile stacks hero → vignette → card via flex order.
 export default function LoginPage() {
   return (
-    <main className="relative isolate min-h-screen w-full bg-background lg:grid lg:grid-cols-[1.05fr_0.95fr]">
+    <main className="relative isolate flex min-h-screen w-full flex-col bg-background lg:grid lg:grid-cols-[1.05fr_0.95fr] lg:grid-rows-2">
       {/* Fine static paper grain across the whole surface — near-invisible depth. */}
       <div aria-hidden className="login-grain pointer-events-none absolute inset-0 -z-10" />
 
-      {/* Left: the cover of the magazine. Hairline divider on lg. */}
-      <section className="border-b border-border/60 lg:border-b-0 lg:border-r">
-        <Cover />
+      {/* Hero — left column, spanning both rows, vertically centred. */}
+      <section className="order-1 border-b border-border/60 lg:order-none lg:col-start-1 lg:row-span-2 lg:border-b-0 lg:border-r">
+        <Hero />
       </section>
 
-      {/* Right: the act of entering. */}
-      <section className="flex items-center justify-center px-6 pb-[calc(3.5rem+env(safe-area-inset-bottom))] pt-6 sm:px-8 lg:min-h-screen lg:py-0 lg:pb-0">
+      {/* Sign-in card — right column, upper row, seated at the vertical centre. */}
+      <section className="order-3 flex justify-center px-6 pb-[calc(3rem+env(safe-area-inset-bottom))] pt-4 sm:px-8 lg:order-none lg:col-start-2 lg:row-start-1 lg:items-end lg:px-10 lg:pb-5 lg:pt-14">
         <Suspense
           fallback={<div className="h-72 w-full max-w-sm animate-pulse rounded-2xl bg-muted" />}
         >
           <LoginForm />
         </Suspense>
+      </section>
+
+      {/* Conversation vignette — right column, lower row. */}
+      <section className="order-2 flex justify-center px-6 pb-10 pt-2 sm:px-8 lg:order-none lg:col-start-2 lg:row-start-2 lg:items-start lg:px-10 lg:pb-14 lg:pt-5">
+        <div className="login-rise w-full max-w-sm" style={{ animationDelay: '620ms' }}>
+          <ConversationVignette arabicClassName={arabic.className} className="w-full" />
+        </div>
       </section>
     </main>
   );
