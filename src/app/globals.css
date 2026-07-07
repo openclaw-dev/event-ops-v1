@@ -55,19 +55,23 @@
   }
 }
 
-/* ===== LOGIN ATMOSPHERE ===== */
-/* All motion is opt-in: static by default, animated only when the visitor
-   has no reduced-motion preference. Decorative layers are aria-hidden and
-   never sit behind headline/form text (see login/page.tsx layout notes). */
-
-.login-error-enter {
-  animation: login-error-in 240ms ease both;
+/* ===== MARKETING — DEMO CHAT REVEAL ===== */
+/* The only motion on the entry pages. A small client component mounts each
+   message in sequence; the class below animates it in once. Under
+   prefers-reduced-motion no animation applies and elements render immediately. */
+@media (prefers-reduced-motion: no-preference) {
+  .chat-enter {
+    animation: chat-enter 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .chat-dot {
+    animation: chat-dot 1.2s ease-in-out infinite;
+  }
 }
 
-@keyframes login-error-in {
+@keyframes chat-enter {
   from {
     opacity: 0;
-    transform: translateY(-4px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -75,268 +79,16 @@
   }
 }
 
-.login-success-enter {
-  animation: login-error-in 320ms ease both;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  /* Near-imperceptible drift of the ghosted Arabic watermark. */
-  .login-ghost {
-    animation: login-ghost-drift 34s ease-in-out infinite alternate;
-  }
-}
-
-@keyframes login-ghost-drift {
-  from {
-    transform: translate3d(0, 0, 0) rotate(0deg);
-  }
-  to {
-    transform: translate3d(1.5%, -1.5%, 0) rotate(-1.2deg);
-  }
-}
-
-/* ===== LOGIN — CINEMATIC ATMOSPHERE LAYERS (dark, scoped to /login) ===== */
-/* The WebGL field renders the moving light; these layers add texture and depth
-   on top of it — film grain, faint scanlines, ultra-soft drifting particles,
-   and a vignette. All decorative, pointer-events-none, above the canvas and
-   below the content. Motion is gated behind prefers-reduced-motion. */
-
-/* Film grain: desaturated fractal noise, overlay-blended so it reads on dark. */
-.login-grain-dark {
-  opacity: 0.32;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='170' height='170'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  background-size: 170px 170px;
-}
-
-/* Faint horizontal scanline texture — barely-there operational feel. */
-.login-scanlines {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    rgba(237, 230, 216, 0) 0px,
-    rgba(237, 230, 216, 0) 2px,
-    rgba(237, 230, 216, 0.02) 3px,
-    rgba(237, 230, 216, 0) 4px
-  );
-}
-
-/* Cinematic vignette to seat the content in a dark room. */
-.login-vignette {
-  background: radial-gradient(120% 85% at 50% 40%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.55) 100%);
-}
-
-/* Ultra-soft warm particles drifting upward — faint sense of live activity. */
-.login-particle {
-  opacity: 0;
-  filter: blur(1px);
-  background: radial-gradient(
-    circle,
-    rgba(237, 230, 216, 0.5) 0%,
-    rgba(224, 166, 89, 0.2) 45%,
-    rgba(237, 230, 216, 0) 70%
-  );
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .login-particle {
-    animation-name: login-float;
-    animation-timing-function: ease-in-out;
-    animation-iteration-count: infinite;
-  }
-}
-
-@keyframes login-float {
-  0% {
-    opacity: 0;
-    transform: translate3d(0, 8px, 0) scale(0.85);
-  }
-  25% {
-    opacity: 0.7;
-  }
-  50% {
-    opacity: 0.35;
-    transform: translate3d(6px, -16px, 0) scale(1.15);
-  }
-  75% {
-    opacity: 0.6;
-  }
+@keyframes chat-dot {
+  0%,
+  60%,
   100% {
-    opacity: 0;
-    transform: translate3d(-5px, -30px, 0) scale(0.95);
+    opacity: 0.3;
+    transform: translateY(0);
   }
-}
-
-/* Ambient live pulse ring (signals indicator). */
-@media (prefers-reduced-motion: no-preference) {
-  .login-pulse {
-    animation: login-pulse 2.4s ease-out infinite;
-  }
-}
-
-@keyframes login-pulse {
-  0% {
-    transform: scale(1);
-    opacity: 0.7;
-  }
-  70%,
-  100% {
-    transform: scale(2.8);
-    opacity: 0;
-  }
-}
-
-/* Subtle pointer parallax — driven by --mx / --my set on <main> (both default
-   to 0, so reduced-motion visitors, where the vars are never set, stay still). */
-.login-parallax-lg {
-  transform: translate3d(calc(var(--mx, 0) * 18px), calc(var(--my, 0) * 14px), 0);
-  transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.login-parallax-sm {
-  transform: translate3d(calc(var(--mx, 0) * 7px), calc(var(--my, 0) * 6px), 0);
-  transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/* ===== LOGIN — GLASS CARD ===== */
-/* A travelling light around a hairline gradient border makes the card feel
-   physical and integrated into the atmosphere rather than a floating box. */
-@property --login-a {
-  syntax: '<angle>';
-  initial-value: 0deg;
-  inherits: false;
-}
-
-.login-card {
-  position: relative;
-  isolation: isolate;
-}
-.login-card::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: conic-gradient(
-    from var(--login-a),
-    rgba(237, 230, 216, 0.04),
-    rgba(237, 230, 216, 0.32) 10%,
-    rgba(224, 166, 89, 0.24) 20%,
-    rgba(237, 230, 216, 0.04) 38%,
-    rgba(237, 230, 216, 0.04) 100%
-  );
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .login-card::before {
-    animation: login-border-spin 14s linear infinite;
-  }
-}
-@keyframes login-border-spin {
-  to {
-    --login-a: 360deg;
-  }
-}
-
-/* Glass reflection: a soft top-left specular sheen + top edge light, seated
-   below the card content (z-index: -1 within the card's stacking context). */
-.login-card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  background:
-    radial-gradient(130% 80% at 14% -10%, rgba(243, 237, 225, 0.07), transparent 55%),
-    linear-gradient(180deg, rgba(243, 237, 225, 0.035), transparent 26%);
-  pointer-events: none;
-}
-
-/* Ambient signal cycle indicator: a hairline that fills across each signal's
-   lifetime, then resets with the next (re-keyed in the component). */
-@media (prefers-reduced-motion: no-preference) {
-  .login-progress {
-    transform-origin: left;
-    animation: login-progress 4920ms linear both;
-  }
-}
-@keyframes login-progress {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
-}
-
-/* ===== LOGIN — ENTRANCE CHOREOGRAPHY (once, on load) ===== */
-/* Elements are visible by default; the rise/ink reveal only exists when the
-   visitor allows motion, so reduced-motion users get a static composed page.
-   Only transform + opacity animate — never layout. Per-element delays are set
-   inline in the JSX so the whole sequence lands under ~1.1s. */
-@media (prefers-reduced-motion: no-preference) {
-  .login-rise {
-    animation: login-rise 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
-
-  /* Kinetic headline: each line rises from behind a clip, one after another. */
-  .login-line-inner {
-    transform: translateY(115%);
-    animation: login-line-up 820ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
-}
-
-/* Clip wrapper for the line reveal. Padding + equal negative margin gives the
-   clip room for ascenders/descenders without changing layout. */
-.login-line {
-  display: block;
-  overflow: hidden;
-  padding: 0.16em 0;
-  margin: -0.16em 0;
-}
-.login-line-inner {
-  display: block;
-}
-
-@keyframes login-rise {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
+  30% {
     opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes login-line-up {
-  from {
-    transform: translateY(115%);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-
-/* ===== LOGIN — SUCCESS ENVELOPE DRAW ===== */
-@media (prefers-reduced-motion: no-preference) {
-  .login-draw rect,
-  .login-draw path {
-    stroke-dasharray: 200;
-    stroke-dashoffset: 200;
-    animation: login-draw 700ms ease forwards;
-  }
-  .login-draw path {
-    animation-delay: 260ms;
-  }
-}
-
-@keyframes login-draw {
-  to {
-    stroke-dashoffset: 0;
+    transform: translateY(-2px);
   }
 }
 
