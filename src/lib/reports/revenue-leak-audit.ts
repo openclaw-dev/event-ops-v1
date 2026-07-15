@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin';
+import { fetchAllRows } from '@/lib/supabase/paginate';
 
 export interface RevenueLeakAuditData {
   event_name: string;
@@ -70,17 +71,30 @@ export async function getRevenueLeakAuditData(
   const currency = row?.operators?.default_currency ?? 'SAR';
 
   // ── Orders ─────────────────────────────────────────────────────────────────
-  const { data: ordersData } = await admin
-    .from('orders')
-    .select('status, quantity, amount_paid, currency')
-    .eq('event_id', eventId);
-
-  const orders = (ordersData ?? []) as Array<{
+  // Paginate: revenue and ticket sums must cover every order, not the first
+  // ~1000 PostgREST returns by default — a large event would otherwise
+  // under-report revenue (audit 4.14).
+  const orders = await fetchAllRows<{
     status: string;
     quantity: number;
     amount_paid: number | string | null;
     currency: string;
-  }>;
+  }>(async (from, to) => {
+    const { data, error } = await admin
+      .from('orders')
+      .select('status, quantity, amount_paid, currency')
+      .eq('event_id', eventId)
+      .range(from, to);
+    return {
+      data: data as Array<{
+        status: string;
+        quantity: number;
+        amount_paid: number | string | null;
+        currency: string;
+      }> | null,
+      error,
+    };
+  });
 
   const completedOrders = orders.filter((o) => o.status === 'completed');
   const failedOrders = orders.filter((o) => o.status === 'payment_failed');
@@ -104,12 +118,15 @@ export async function getRevenueLeakAuditData(
     attempted_total === 0 ? 0 : (failed_payment_count / attempted_total) * 100;
 
   // ── Scan data ──────────────────────────────────────────────────────────────
-  const { data: scansData } = await admin
-    .from('gate_scans')
-    .select('scan_result')
-    .eq('event_id', eventId);
-
-  const gateScanRows = (scansData ?? []) as Array<{ scan_result: string }>;
+  // Paginate so scan-result counts are exact for high-volume gates (audit 4.14).
+  const gateScanRows = await fetchAllRows<{ scan_result: string }>(async (from, to) => {
+    const { data, error } = await admin
+      .from('gate_scans')
+      .select('scan_result')
+      .eq('event_id', eventId)
+      .range(from, to);
+    return { data: data as Array<{ scan_result: string }> | null, error };
+  });
   const total_scan_attempts = gateScanRows.length;
   const tickets_scanned = gateScanRows.filter((s) => s.scan_result === 'admitted').length;
   const duplicate_scan_count = gateScanRows.filter((s) => s.scan_result === 'duplicate').length;
@@ -129,12 +146,16 @@ export async function getRevenueLeakAuditData(
   const no_show_revenue_sar = no_show_count * avg_ticket_price_for_no_show;
 
   // ── Conversations ──────────────────────────────────────────────────────────
-  const { data: convosData } = await admin
-    .from('conversations')
-    .select('id, state')
-    .eq('event_id', eventId);
-
-  const convos = (convosData ?? []) as Array<{ id: string; state: string }>;
+  // Paginate: the id list feeds the top-intents message query below, and the
+  // counts must be exact (audit 4.14).
+  const convos = await fetchAllRows<{ id: string; state: string }>(async (from, to) => {
+    const { data, error } = await admin
+      .from('conversations')
+      .select('id, state')
+      .eq('event_id', eventId)
+      .range(from, to);
+    return { data: data as Array<{ id: string; state: string }> | null, error };
+  });
   const total_conversations = convos.length;
   const escalated_conversations = convos.filter(
     (c) => c.state === 'escalation_triggered',

@@ -7,6 +7,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { fetchAllRows } from '@/lib/supabase/paginate';
 
 export interface ConversationMetrics {
   total: number;
@@ -61,30 +62,33 @@ export async function getConversationMetrics(
   let refunds_deflected = 0;
 
   if (total > 0) {
-    const { data: nonEscalatedConvos } = await withSince(
-      admin
-        .from('conversations')
-        .select('id')
-        .eq('event_id', eventId)
-        .neq('state', 'escalation_triggered'),
-    );
+    // Paginate both selects so the deflection count is exact on large events
+    // rather than capped at PostgREST's ~1000-row default (audit 4.14).
+    const nonEscalatedConvos = await fetchAllRows<{ id: string }>(async (from, to) => {
+      const { data, error } = await withSince(
+        admin
+          .from('conversations')
+          .select('id')
+          .eq('event_id', eventId)
+          .neq('state', 'escalation_triggered'),
+      ).range(from, to);
+      return { data: data as Array<{ id: string }> | null, error };
+    });
 
-    const nonEscalatedIds = (nonEscalatedConvos ?? []).map(
-      (c) => (c as { id: string }).id,
-    );
+    const nonEscalatedIds = nonEscalatedConvos.map((c) => c.id);
 
     if (nonEscalatedIds.length > 0) {
-      const { data: deflectionMsgs } = await admin
-        .from('messages')
-        .select('conversation_id')
-        .in('conversation_id', nonEscalatedIds)
-        .eq('deflection_offered', true);
+      const deflectionMsgs = await fetchAllRows<{ conversation_id: string }>(async (from, to) => {
+        const { data, error } = await admin
+          .from('messages')
+          .select('conversation_id')
+          .in('conversation_id', nonEscalatedIds)
+          .eq('deflection_offered', true)
+          .range(from, to);
+        return { data: data as Array<{ conversation_id: string }> | null, error };
+      });
 
-      const deflectedSet = new Set(
-        (deflectionMsgs ?? []).map(
-          (m) => (m as { conversation_id: string }).conversation_id,
-        ),
-      );
+      const deflectedSet = new Set(deflectionMsgs.map((m) => m.conversation_id));
       refunds_deflected = deflectedSet.size;
     }
   }

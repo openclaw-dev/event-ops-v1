@@ -1,5 +1,13 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createWhatsAppAdapter } from '@/lib/whatsapp/adapter-factory';
+import { localDateStringInTz, DEFAULT_EVENT_TZ } from '@/lib/dates';
+import { fetchAllRows } from '@/lib/supabase/paginate';
+
+// Recipient-fetch tripwire: today's 500-recipient creation cap keeps sendCampaign
+// well under PostgREST's ~1000-row default, but if that cap is ever raised this
+// bound would silently truncate the send. We fetch up to this many and log if we
+// hit it exactly (audit 4.14).
+const RECIPIENT_FETCH_LIMIT = 1000;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -194,13 +202,21 @@ export async function sendCampaign(
     .from('crm_campaign_recipients')
     .select('id, customer_phone_e164, customer_name')
     .eq('campaign_id', campaign_id)
-    .eq('status', 'pending');
+    .eq('status', 'pending')
+    .limit(RECIPIENT_FETCH_LIMIT);
 
   const recipients = (recipientsData ?? []) as Array<{
     id: string;
     customer_phone_e164: string;
     customer_name: string | null;
   }>;
+
+  if (recipients.length === RECIPIENT_FETCH_LIMIT) {
+    console.warn('[crm/sendCampaign] recipient fetch hit its limit — some recipients may not be messaged', {
+      campaign_id,
+      limit: RECIPIENT_FETCH_LIMIT,
+    });
+  }
 
   let adapter: ReturnType<typeof createWhatsAppAdapter> | null = null;
   try {
@@ -293,16 +309,27 @@ export async function getCampaignStats(campaignId: string): Promise<{
 }> {
   const admin = createAdminClient();
 
-  const { data: recipientsData } = await admin
-    .from('crm_campaign_recipients')
-    .select('status, converted, conversion_revenue_sar')
-    .eq('campaign_id', campaignId);
-
-  const rows = (recipientsData ?? []) as Array<{
+  // Paginate: revenue/conversion sums must include every recipient, not just the
+  // first ~1000 PostgREST returns by default (audit 4.14).
+  const rows = await fetchAllRows<{
     status: string;
     converted: boolean;
     conversion_revenue_sar: number | string | null;
-  }>;
+  }>(async (from, to) => {
+    const { data, error } = await admin
+      .from('crm_campaign_recipients')
+      .select('status, converted, conversion_revenue_sar')
+      .eq('campaign_id', campaignId)
+      .range(from, to);
+    return {
+      data: data as Array<{
+        status: string;
+        converted: boolean;
+        conversion_revenue_sar: number | string | null;
+      }> | null,
+      error,
+    };
+  });
 
   const total = rows.length;
   const sent = rows.filter(
@@ -341,6 +368,36 @@ export async function getNoShowSegment(eventId: string): Promise<
 > {
   const admin = createAdminClient();
 
+  // Guard 1 (audit 4.4): only build a no-show segment for an event that has
+  // ACTUALLY ENDED, measured in the event's local timezone. A re-marketing
+  // blast to every buyer of an event that hasn't happened yet is the failure
+  // being prevented.
+  const { data: eventRow, error: eventError } = await admin
+    .from('events')
+    .select('end_date, timezone')
+    .eq('id', eventId)
+    .single();
+
+  if (eventError || !eventRow) {
+    console.error('[crm/getNoShowSegment] event lookup failed — returning empty segment', {
+      event_id: eventId,
+      error: eventError?.message ?? 'not found',
+    });
+    return [];
+  }
+
+  const ev = eventRow as { end_date: string | null; timezone: string | null };
+  const todayLocal = localDateStringInTz(new Date(), ev.timezone ?? DEFAULT_EVENT_TZ);
+  if (!ev.end_date || ev.end_date >= todayLocal) {
+    // Event has not ended (end_date today or in the future, or missing).
+    console.warn('[crm/getNoShowSegment] event has not ended — refusing to build segment', {
+      event_id: eventId,
+      end_date: ev.end_date,
+      today_local: todayLocal,
+    });
+    return [];
+  }
+
   const [ordersResult, scansResult] = await Promise.all([
     admin
       .from('orders')
@@ -365,11 +422,18 @@ export async function getNoShowSegment(eventId: string): Promise<
   const admittedScans = (scansResult.data ?? []) as Array<{ order_id: string | null }>;
   const admittedOrderIds = new Set(admittedScans.map((s) => s.order_id).filter(Boolean) as string[]);
 
-  // Only filter by gate scans if the event has scan data (gates were in use).
-  // If no scans exist, return all completed orders as a best-effort segment.
-  const noShows = admittedOrderIds.size > 0
-    ? orders.filter((o) => !admittedOrderIds.has(o.order_id))
-    : orders;
+  // Guard 2 (audit 4.4): with NO gate-scan data there is no evidence of who
+  // actually attended, so we cannot distinguish no-shows from attendees. Return
+  // an EMPTY segment rather than blasting every buyer of the event.
+  if (admittedOrderIds.size === 0) {
+    console.warn('[crm/getNoShowSegment] no gate-scan data for ended event — returning empty segment', {
+      event_id: eventId,
+      completed_orders: orders.length,
+    });
+    return [];
+  }
+
+  const noShows = orders.filter((o) => !admittedOrderIds.has(o.order_id));
 
   return noShows.map((o) => ({
     customer_phone_e164: o.customer_phone_e164,

@@ -50,6 +50,13 @@ export interface MappingResult {
   raw_data: Record<string, unknown>[];
   /** True when the mapping came from the mastersheet_mappings cache, not Haiku. */
   from_cache?: boolean;
+  /**
+   * SHA-256 fingerprint of this upload's column format. Exposed so callers can
+   * scope a saved-mapping merge to the SAME format and never borrow another
+   * format's columns at boosted confidence (audit 4.12). Undefined when no
+   * operatorId was supplied (fingerprint is only computed then).
+   */
+  format_fingerprint?: string;
 }
 
 // ─── Valid EventSetupFormData keypaths ────────────────────────────────────────
@@ -497,6 +504,7 @@ export async function normaliseSheet(buf: Buffer, operatorId?: string): Promise<
             needs_review_count,
             raw_data: raw,
             from_cache: true,
+            format_fingerprint: fingerprint,
           };
         }
       }
@@ -631,5 +639,6 @@ export async function normaliseSheet(buf: Buffer, operatorId?: string): Promise<
     high_confidence_count,
     needs_review_count,
     raw_data: raw,
+    format_fingerprint: fingerprint,
   };
 }

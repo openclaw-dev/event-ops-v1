@@ -103,14 +103,30 @@ export async function validateAndRecordScan(params: ValidateScanParams): Promise
     };
   }
 
-  // Look up the order — match on external order_id (case-insensitive).
-  const { data: order } = await supabase
+  // Look up the order by exact order_id. Uses .eq (not .ilike) so that:
+  //  - a case collision on the case-sensitively-unique order_id can't return
+  //    multiple rows, which maybeSingle would surface as an error and wrongly
+  //    reject a valid ticket at the gate;
+  //  - %/_ in the QR payload are treated as literal characters, not SQL LIKE
+  //    wildcards (audit 4.11).
+  // The error is read and logged rather than silently discarded.
+  const { data: order, error: orderLookupError } = await supabase
     .from('orders')
     .select('order_id, customer_name, customer_phone_e164, ticket_type, quantity')
     .eq('event_id', params.event_id)
     .eq('status', 'completed')
-    .ilike('order_id', code)
+    .eq('order_id', code)
     .maybeSingle();
+
+  if (orderLookupError) {
+    // Fail safe: a lookup error records a not_found scan below (staff can
+    // rescan) rather than crashing the gate or admitting on bad data.
+    console.error('[gate/scan-validator] order lookup failed', {
+      event_id: params.event_id,
+      code,
+      error: orderLookupError.message,
+    });
+  }
 
   if (!order) {
     const { error: notFoundInsertError } = await supabase.from('gate_scans').insert({

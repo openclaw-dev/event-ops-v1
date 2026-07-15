@@ -523,24 +523,47 @@ async function handleInboundMessage(
     const fromPhone = normalisePhone(message.from_phone_e164);
     console.log('[inbound] message received', { type: message.type, from: fromPhone });
 
-    // 1. Look up promoter by phone.
-    const { data: promoterData } = await admin
-      .from('promoters')
-      .select('id, operator_id, event_id, preferred_language')
-      .eq('phone_e164', fromPhone)
-      .eq('is_active', true)
-      .maybeSingle();
+    // 1. Resolve the operator that owns THIS WhatsApp number first, so the
+    //    promoter lookup can be scoped by (operator_id, phone_e164) — the actual
+    //    UNIQUE constraint on promoters. Without this scope, a phone whitelisted
+    //    by two operators makes .maybeSingle() error on multiple rows → null →
+    //    the promoter silently falls into the customer-support flow; and a
+    //    promoter of operator A texting operator B's number would otherwise
+    //    enter A's change-management flow (audit 4.1). Mirrors the resolution in
+    //    handleCustomerSupportMessage (which re-resolves for the customer path).
+    let promoterOperator = await getOperatorByPhoneNumberId(phoneNumberId);
+    if (!promoterOperator) promoterOperator = await getSingleOperatorFallback();
 
-    console.log('[inbound] promoter lookup result', { found: !!promoterData, event_id: (promoterData as Record<string, unknown> | null)?.event_id ?? null });
+    let promoterData:
+      | { id: string; operator_id: string; event_id: string | null; preferred_language: string }
+      | null = null;
+    if (promoterOperator) {
+      const { data, error: promoterLookupError } = await admin
+        .from('promoters')
+        .select('id, operator_id, event_id, preferred_language')
+        .eq('operator_id', promoterOperator.operator_id)
+        .eq('phone_e164', fromPhone)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (promoterLookupError) {
+        console.error('[inbound] promoter lookup failed', {
+          operator_id: promoterOperator.operator_id,
+          from: fromPhone,
+          error: promoterLookupError.message,
+        });
+      }
+      promoterData =
+        (data as { id: string; operator_id: string; event_id: string | null; preferred_language: string } | null) ??
+        null;
+    } else {
+      console.warn('[inbound] promoter lookup skipped — no operator resolved for phoneNumberId', { phoneNumberId });
+    }
 
-    // ── Promoter flow (completely unchanged) ────────────────────────────────
+    console.log('[inbound] promoter lookup result', { found: !!promoterData, event_id: promoterData?.event_id ?? null });
+
+    // ── Promoter flow (unchanged below this point) ──────────────────────────
     if (promoterData) {
-      const promoter = promoterData as {
-        id: string;
-        operator_id: string;
-        event_id: string | null;
-        preferred_language: string;
-      };
+      const promoter = promoterData;
 
       if (!promoter.event_id) {
         await adapter.sendText({
@@ -797,7 +820,9 @@ function extractPhoneNumberId(body: unknown): string {
     const id = metadata?.phone_number_id as string | undefined;
     if (id) return id;
   } catch { /* ignore */ }
-  return process.env.META_PHONE_NUMBER_ID ?? '';
+  // Trim the env fallback so a trailing newline in META_PHONE_NUMBER_ID cannot
+  // corrupt the operator lookup (carry-over from the 2026-07-15 env-var sweep).
+  return optionalEnv('META_PHONE_NUMBER_ID') ?? '';
 }
 
 // ─── POST — Inbound message receiver ─────────────────────────────────────────

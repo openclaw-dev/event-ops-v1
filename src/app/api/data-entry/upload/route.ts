@@ -139,7 +139,17 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   // ── 6. Merge saved confidence scores from mastersheet_mappings ───────────
+  // Scope the merge to the SAME format_fingerprint as this upload — otherwise
+  // the most-recent saved mapping of ANY format could override colliding column
+  // names at boosted confidence and bypass review (audit 4.12). Skip the merge
+  // entirely when we have no fingerprint (no operatorId), since we cannot match.
   try {
+    const uploadFingerprint = result.format_fingerprint;
+    if (!uploadFingerprint) {
+      console.warn('[data-entry/upload] no format_fingerprint — skipping saved-mapping merge');
+      return NextResponse.json(result, { status: 200 });
+    }
+
     const admin = createAdminClient();
     // .maybeSingle so a brand-new operator with no saved mapping yet doesn't
     // produce a noisy 404 PGRST round-trip.
@@ -147,6 +157,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       .from('mastersheet_mappings')
       .select('confidence_scores, field_map')
       .eq('operator_id', resolvedOperatorId)
+      .eq('format_fingerprint', uploadFingerprint)
       .order('last_used_at', { ascending: false })
       .limit(1)
       .maybeSingle();

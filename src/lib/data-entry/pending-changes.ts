@@ -67,6 +67,27 @@ export async function createPendingChange(params: {
 }): Promise<PendingChange> {
   const supabase = createAdminClient();
 
+  // Step 0 — idempotency guard (audit 4.3). A duplicate webhook delivery must
+  // never supersede the legit pending change and THEN throw on the
+  // inbound_wamid UNIQUE constraint (which would leave the promoter's Confirm
+  // button resolving to nothing). Cheap select on the unique column first; if a
+  // row for this inbound_wamid already exists, return it and do nothing else.
+  // Complements the top-of-handler wamid dedup added 2026-07-15 at the
+  // persistence layer, where a redelivery that slips past the in-flight dedup
+  // is still caught here.
+  const { data: existingForWamid, error: existingError } = await supabase
+    .from('pending_changes')
+    .select('*')
+    .eq('inbound_wamid', params.inbound_wamid)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error('createPendingChange idempotency check failed: ' + existingError.message);
+  }
+  if (existingForWamid) {
+    return existingForWamid as unknown as PendingChange;
+  }
+
   // Step 1 — supersede any open pending rows for this (event_id, promoter_id).
   const { error: supersededError } = await supabase
     .from('pending_changes')

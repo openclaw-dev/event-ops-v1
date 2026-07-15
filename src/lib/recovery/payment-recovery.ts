@@ -229,10 +229,15 @@ export async function getRecoveryStats(eventId: string): Promise<RecoveryStats> 
 export async function expireStaleRecoveryAttempts(): Promise<number> {
   const admin = createAdminClient();
 
+  // Expire any attempt that was dispatched but never completed once its 24h
+  // window passes — not just 'pending' ones. The message promises "expires in
+  // 24 hours", so 'sent' and 'opened' attempts must expire too, or stats
+  // over-count active links and customers get re-messaged against a dead one
+  // (audit 4.10).
   const { data, error } = await admin
     .from('payment_recovery_attempts')
     .update({ status: 'expired', updated_at: new Date().toISOString() })
-    .eq('status', 'pending')
+    .in('status', ['pending', 'sent', 'opened'])
     .lt('expires_at', new Date().toISOString())
     .select('id');
 

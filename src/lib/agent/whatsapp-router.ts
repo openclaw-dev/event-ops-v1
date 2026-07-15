@@ -11,6 +11,10 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { localDateStringInTz, DEFAULT_EVENT_TZ } from '@/lib/dates';
 
+// Max events offered in a multi-event selection prompt. Bounded by the
+// single-digit reply space (customer answers "1".."9").
+const MULTI_EVENT_LIMIT = 9;
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type EventRouteResult =
@@ -34,17 +38,37 @@ export async function getOperatorByPhoneNumberId(
   if (!phoneNumberId) return null;
 
   const admin = createAdminClient();
-  const { data } = await admin
+  const { data, error } = await admin
     .from('operators')
     .select('id')
     .eq('whatsapp_business_phone_number_id', phoneNumberId)
     .maybeSingle();
 
-  if (!data) return null;
+  // Three distinct outcomes, all logged so the documented duplicate-phone-ID
+  // incident is detectable if it ever recurs (audit 4.2). maybeSingle() returns
+  // an error when MORE than one operator shares this phone-number-ID (which has
+  // no DB uniqueness constraint) — that must not silently look like "not found".
+  if (error) {
+    console.error(
+      '[whatsapp-router] getOperatorByPhoneNumberId query failed (possible duplicate phone-number-ID across operators)',
+      { phone_number_id: phoneNumberId, code: error.code, error: error.message },
+    );
+    return null;
+  }
+  if (!data) {
+    console.log('[whatsapp-router] getOperatorByPhoneNumberId: no operator configured for phone-number-ID', {
+      phone_number_id: phoneNumberId,
+    });
+    return null;
+  }
 
   const row = data as { id: string };
   // The operators table IS the operator — id = operator_id (self-referential alias
   // kept for clarity in the routing layer).
+  console.log('[whatsapp-router] getOperatorByPhoneNumberId: resolved operator', {
+    phone_number_id: phoneNumberId,
+    operator_id: row.id,
+  });
   return { id: row.id, operator_id: row.id };
 }
 
@@ -106,7 +130,9 @@ export async function resolveEventForOperator(
     )
     .is('deleted_at', null)
     .order('start_date', { ascending: true })
-    .limit(5);
+    // Single-digit reply space (customer picks "1".."9") bounds the list; raised
+    // from 5 so a 6th–9th active event is still selectable (audit 4.13).
+    .limit(MULTI_EVENT_LIMIT);
 
   // Throw on a real DB error so the inbound route's catch sends the generic
   // error reply — a swallowed error must never masquerade as "no active
@@ -124,6 +150,15 @@ export async function resolveEventForOperator(
     status: string;
     config: Record<string, unknown>;
   }>;
+
+  if (events.length === MULTI_EVENT_LIMIT) {
+    // We fetched exactly the cap — there may be more active events than the
+    // customer can be offered. Surface it instead of silently truncating.
+    console.warn('[whatsapp-router] multi-event list hit the selection cap — extra active events not offered', {
+      operator_id: operatorId,
+      cap: MULTI_EVENT_LIMIT,
+    });
+  }
 
   if (events.length === 0) return { type: 'none' };
 
