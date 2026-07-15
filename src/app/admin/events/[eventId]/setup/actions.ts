@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 
 import { createServerClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { writeAuditLog } from '@/lib/audit/write-audit-log';
 import { type EventSetupFormData } from '@/lib/schemas';
 import { type EventConfig } from '@/lib/types';
 
@@ -84,8 +85,7 @@ export async function updateEvent(
   }
 
   // Audit log (service-role).
-  const admin = createAdminClient();
-  await admin.from('audit_log').insert({
+  await writeAuditLog({
     operator_id: event.operator_id,
     event_id: eventId,
     actor_type: 'user',
@@ -126,8 +126,7 @@ export async function endEvent(
     return { error: updateError?.message ?? 'Failed to end event.' };
   }
 
-  const admin = createAdminClient();
-  await admin.from('audit_log').insert({
+  await writeAuditLog({
     operator_id: (event as { operator_id: string }).operator_id,
     event_id: eventId,
     actor_type: 'user',
@@ -164,7 +163,7 @@ export async function deleteEvent(
   const admin = createAdminClient();
 
   // Audit with event_id = null so the row is NOT cascade-deleted when the event is removed.
-  await admin.from('audit_log').insert({
+  await writeAuditLog({
     operator_id: event.operator_id,
     event_id: null,
     actor_type: 'user',
@@ -205,8 +204,7 @@ export async function publishEvent(
   }
 
   // Audit log.
-  const admin = createAdminClient();
-  await admin.from('audit_log').insert({
+  await writeAuditLog({
     operator_id: (event as { operator_id: string }).operator_id,
     event_id: eventId,
     actor_type: 'user',

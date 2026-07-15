@@ -37,6 +37,7 @@ import {
 } from '@/lib/agent/whatsapp-router';
 import { getOrCreateWhatsAppConversation } from '@/lib/agent/whatsapp-conversation';
 import { markMessageProcessed } from '@/lib/whatsapp/message-dedup';
+import { writeAuditLog } from '@/lib/audit/write-audit-log';
 import {
   getPendingEventSelection,
   setPendingEventSelection,
@@ -218,9 +219,13 @@ async function handleCustomerSupportMessage(
       }
     } else {
       // Invalid selection — re-send the prompt.
-      await adapter.sendText({
+      const reSendResult = await adapter.sendText({
         to_phone_e164: phone,
         text: buildEventSelectionPrompt(pendingSelection.events),
+      });
+      console.log('[inbound] re-sent selection prompt (invalid choice)', {
+        success: reSendResult.success,
+        error: reSendResult.error ?? null,
       });
       return;
     }
@@ -235,9 +240,13 @@ async function handleCustomerSupportMessage(
     if (routeResult.type === 'none') {
       console.warn('[inbound] no active events for operator:', operator.operator_id,
         '— ensure at least one event has status=live');
-      await adapter.sendText({
+      const noEventsSendResult = await adapter.sendText({
         to_phone_e164: phone,
         text: 'There are no active events at the moment.',
+      });
+      console.log('[inbound] sent "no active events" reply', {
+        success: noEventsSendResult.success,
+        error: noEventsSendResult.error ?? null,
       });
       return;
     }
@@ -246,9 +255,13 @@ async function handleCustomerSupportMessage(
       // Store the original question alongside the event list so it can be
       // re-injected on the next turn once the customer picks an event.
       await setPendingEventSelection(phone, routeResult.events, message.text);
-      await adapter.sendText({
+      const selectionSendResult = await adapter.sendText({
         to_phone_e164: phone,
         text: buildEventSelectionPrompt(routeResult.events),
+      });
+      console.log('[inbound] sent event-selection prompt', {
+        success: selectionSendResult.success,
+        error: selectionSendResult.error ?? null,
       });
       return;
     }
@@ -337,13 +350,19 @@ async function handleCustomerSupportMessage(
     : conv.language;
 
   // Step 7: Persist the user message then the agent reply.
-  await admin.from('messages').insert({
+  const { error: userMsgError } = await admin.from('messages').insert({
     conversation_id: conv.conversation_id,
     role: 'user',
     text: effectiveMessageText,
   });
+  if (userMsgError) {
+    console.error('[inbound] user message insert failed', {
+      conversation_id: conv.conversation_id,
+      error: userMsgError.message,
+    });
+  }
 
-  await admin.from('messages').insert({
+  const { error: agentMsgError } = await admin.from('messages').insert({
     conversation_id: conv.conversation_id,
     role: 'agent',
     text: result.reply_text,
@@ -353,6 +372,12 @@ async function handleCustomerSupportMessage(
     source_section: result.source_section ?? null,
     deflection_offered: result.deflection_offer != null,
   });
+  if (agentMsgError) {
+    console.error('[inbound] agent message insert failed', {
+      conversation_id: conv.conversation_id,
+      error: agentMsgError.message,
+    });
+  }
 
   // Update conversation state.
   const nextNoProgress =
@@ -360,7 +385,7 @@ async function handleCustomerSupportMessage(
       ? conv.consecutive_no_progress_turns + 1
       : 0;
 
-  await admin
+  const { data: convUpdated, error: convUpdateError } = await admin
     .from('conversations')
     .update({
       state: result.new_state,
@@ -374,7 +399,17 @@ async function handleCustomerSupportMessage(
           : null,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', conv.conversation_id);
+    .eq('id', conv.conversation_id)
+    .select('id');
+  if (convUpdateError || !convUpdated || convUpdated.length === 0) {
+    // Non-fatal (we still owe the customer a reply) but must not be silent —
+    // a failed state update leaves the conversation state machine stuck.
+    console.error('[inbound] conversation state update failed', {
+      conversation_id: conv.conversation_id,
+      new_state: result.new_state,
+      error: convUpdateError?.message ?? 'zero rows affected',
+    });
+  }
 
   // Open an escalation row if the agent escalated.
   let escalationInsertFailed = false;
@@ -416,27 +451,23 @@ async function handleCustomerSupportMessage(
     }
   }
 
-  // Audit log (non-fatal).
-  try {
-    await admin.from('audit_log').insert({
-      operator_id: operator.operator_id,
-      event_id: resolvedEventId,
-      actor_type: 'agent',
-      action: result.escalation ? 'agent.escalated' : 'agent.replied',
-      entity_type: 'conversation',
-      entity_id: conv.conversation_id,
-      metadata: {
-        channel: 'whatsapp',
-        classified_intent: result.classified_intent,
-        cited_section_ids: result.cited_section_ids,
-        escalation_reason: result.escalation?.reason ?? null,
-        new_state: result.new_state,
-        is_new_conversation: conv.is_new,
-      },
-    });
-  } catch (auditErr) {
-    console.warn('[whatsapp/inbound] audit log failed (non-fatal):', auditErr);
-  }
+  // Audit log (non-fatal — writeAuditLog checks and logs its own error).
+  await writeAuditLog({
+    operator_id: operator.operator_id,
+    event_id: resolvedEventId,
+    actor_type: 'agent',
+    action: result.escalation ? 'agent.escalated' : 'agent.replied',
+    entity_type: 'conversation',
+    entity_id: conv.conversation_id,
+    metadata: {
+      channel: 'whatsapp',
+      classified_intent: result.classified_intent,
+      cited_section_ids: result.cited_section_ids,
+      escalation_reason: result.escalation?.reason ?? null,
+      new_state: result.new_state,
+      is_new_conversation: conv.is_new,
+    },
+  });
 
   // Step 8: Send the reply.
   // If the escalation row failed to insert above, fall back to a safe message
@@ -445,9 +476,13 @@ async function handleCustomerSupportMessage(
     ? 'Your request has been escalated. Our team will follow up shortly.'
     : result.reply_text;
 
-  await adapter.sendText({
+  const finalSendResult = await adapter.sendText({
     to_phone_e164: phone,
     text: outboundText,
+  });
+  console.log('[inbound] customer reply send result', {
+    success: finalSendResult.success,
+    error: finalSendResult.error ?? null,
   });
 }
 
@@ -629,21 +664,43 @@ async function handleInboundMessage(
     let pendingChange: PendingChange | null = null;
     try {
       pendingChange = await findPendingByConfirmationWamid(message.context_wamid);
-    } catch {
-      return; // lookup failure — ignore silently
+    } catch (lookupErr) {
+      console.log('[inbound] button-reply: pending-change lookup failed — ignoring', {
+        context_wamid: message.context_wamid,
+        error: lookupErr instanceof Error ? lookupErr.message : String(lookupErr),
+      });
+      return;
     }
-    if (!pendingChange) return;
+    if (!pendingChange) {
+      console.log('[inbound] button-reply: no pending change for context_wamid — ignoring', {
+        context_wamid: message.context_wamid,
+      });
+      return;
+    }
 
     // 2. Verify the sender is the promoter who originated the request.
-    const { data: promoterData } = await admin
+    const { data: promoterData, error: promoterLookupError } = await admin
       .from('promoters')
       .select('id, phone_e164')
       .eq('id', pendingChange.promoter_id)
       .maybeSingle();
 
-    if (!promoterData) return;
+    if (promoterLookupError || !promoterData) {
+      console.log('[inbound] button-reply: promoter not found for pending change — ignoring', {
+        promoter_id: pendingChange.promoter_id,
+        error: promoterLookupError?.message ?? null,
+      });
+      return;
+    }
     const promoter = promoterData as { id: string; phone_e164: string };
-    if (promoter.phone_e164 !== fromPhone) return;
+    // Normalise BOTH sides — a raw stored value with a leading '+' or spaces
+    // must not fail an exact-match against the normalised sender (audit 6.9).
+    if (normalisePhone(promoter.phone_e164) !== fromPhone) {
+      console.log('[inbound] button-reply: sender does not match promoter phone — ignoring', {
+        pending_change_id: pendingChange.id,
+      });
+      return;
+    }
 
     // 3. Handle "Confirm" reply.
     if (message.button_id.startsWith('confirm_pc_')) {
@@ -692,11 +749,21 @@ async function handleInboundMessage(
         actor_promoter_id: promoter.id,
         via: 'whatsapp',
       });
-      await adapter.sendText({
+      const cancelSend = await adapter.sendText({
         to_phone_e164: fromPhone,
         text: 'Cancelled.',
       });
+      console.log('[inbound] button-reply: cancelled', {
+        pending_change_id: pendingChange.id,
+        send_success: cancelSend.success,
+      });
+      return;
     }
+
+    // 5. Unrecognised button id — neither confirm nor cancel.
+    console.log('[inbound] button-reply: unrecognised button_id — ignoring', {
+      button_id: message.button_id,
+    });
     return;
   }
 

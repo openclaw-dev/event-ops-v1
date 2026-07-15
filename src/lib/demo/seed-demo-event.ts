@@ -7,6 +7,17 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { writeAuditLog } from '@/lib/audit/write-audit-log';
+
+/**
+ * Throws on a supabase-js write error so a partially-seeded (and therefore
+ * broken) demo surfaces as a failure instead of a false success (audit 6.12).
+ */
+function assertSeedWrite(error: { message: string } | null, step: string): void {
+  if (error) {
+    throw new Error(`seedDemoEvent: ${step} failed: ${error.message}`);
+  }
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -217,10 +228,11 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
   const eventId = eventRow.id as string;
 
   // Patch config.event_id with the real UUID.
-  await admin
+  const { error: configPatchError } = await admin
     .from('events')
     .update({ config: { ...config, event_id: eventId } })
     .eq('id', eventId);
+  assertSeedWrite(configPatchError, 'config.event_id patch');
 
   // ── 4. Insert KB sections ──────────────────────────────────────────────────
   const kbRows = KB_SECTIONS.map((s, i) => ({
@@ -237,7 +249,8 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
     language: s.language,
   }));
 
-  await admin.from('kb_sections').insert(kbRows);
+  const { error: kbInsertError } = await admin.from('kb_sections').insert(kbRows);
+  assertSeedWrite(kbInsertError, 'kb_sections insert');
 
   // ── 5. Insert orders ───────────────────────────────────────────────────────
   const orderRows = DEMO_ORDERS.map((o) => ({
@@ -255,12 +268,13 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
     transfer_eligible: true,
   }));
 
-  await admin.from('orders').insert(orderRows);
+  const { error: ordersInsertError } = await admin.from('orders').insert(orderRows);
+  assertSeedWrite(ordersInsertError, 'orders insert');
 
   // ── 6. Insert conversations + messages ────────────────────────────────────
 
   // Conversation 1: Resolved — timing question (English)
-  const { data: conv1 } = await admin
+  const { data: conv1, error: conv1Error } = await admin
     .from('conversations')
     .insert({
       event_id: eventId,
@@ -274,9 +288,10 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
     })
     .select('id')
     .single();
+  assertSeedWrite(conv1Error, 'conversation 1 insert');
 
   if (conv1?.id) {
-    await admin.from('messages').insert([
+    const { error: conv1MsgError } = await admin.from('messages').insert([
       {
         conversation_id: conv1.id,
         role: 'user',
@@ -304,10 +319,11 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
         created_at: hoursAgo(47.7),
       },
     ]);
+    assertSeedWrite(conv1MsgError, 'conversation 1 messages insert');
   }
 
   // Conversation 2: Resolved — dress code question (English)
-  const { data: conv2 } = await admin
+  const { data: conv2, error: conv2Error } = await admin
     .from('conversations')
     .insert({
       event_id: eventId,
@@ -321,9 +337,10 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
     })
     .select('id')
     .single();
+  assertSeedWrite(conv2Error, 'conversation 2 insert');
 
   if (conv2?.id) {
-    await admin.from('messages').insert([
+    const { error: conv2MsgError } = await admin.from('messages').insert([
       {
         conversation_id: conv2.id,
         role: 'user',
@@ -345,10 +362,11 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
         created_at: hoursAgo(35.8),
       },
     ]);
+    assertSeedWrite(conv2MsgError, 'conversation 2 messages insert');
   }
 
   // Conversation 3: Escalated — VIP area complaint (English)
-  const { data: conv3 } = await admin
+  const { data: conv3, error: conv3Error } = await admin
     .from('conversations')
     .insert({
       event_id: eventId,
@@ -362,9 +380,10 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
     })
     .select('id')
     .single();
+  assertSeedWrite(conv3Error, 'conversation 3 insert');
 
   if (conv3?.id) {
-    await admin.from('messages').insert([
+    const { error: conv3MsgError } = await admin.from('messages').insert([
       {
         conversation_id: conv3.id,
         role: 'user',
@@ -386,9 +405,10 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
         created_at: hoursAgo(23.8),
       },
     ]);
+    assertSeedWrite(conv3MsgError, 'conversation 3 messages insert');
 
     // Escalation record
-    await admin.from('escalations').insert({
+    const { error: escalationError } = await admin.from('escalations').insert({
       conversation_id: conv3.id,
       event_id: eventId,
       reason: 'VIP experience concern — customer requesting assurance about improvements',
@@ -397,10 +417,11 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
       status: 'open',
       created_at: hoursAgo(23.8),
     });
+    assertSeedWrite(escalationError, 'escalation insert');
   }
 
   // Conversation 4: Refund deflected (English)
-  const { data: conv4 } = await admin
+  const { data: conv4, error: conv4Error } = await admin
     .from('conversations')
     .insert({
       event_id: eventId,
@@ -414,9 +435,10 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
     })
     .select('id')
     .single();
+  assertSeedWrite(conv4Error, 'conversation 4 insert');
 
   if (conv4?.id) {
-    await admin.from('messages').insert([
+    const { error: conv4MsgError } = await admin.from('messages').insert([
       {
         conversation_id: conv4.id,
         role: 'user',
@@ -451,10 +473,11 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
         created_at: hoursAgo(11.6),
       },
     ]);
+    assertSeedWrite(conv4MsgError, 'conversation 4 messages insert');
   }
 
   // Conversation 5: Arabic language — ticket price question
-  const { data: conv5 } = await admin
+  const { data: conv5, error: conv5Error } = await admin
     .from('conversations')
     .insert({
       event_id: eventId,
@@ -468,9 +491,10 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
     })
     .select('id')
     .single();
+  assertSeedWrite(conv5Error, 'conversation 5 insert');
 
   if (conv5?.id) {
-    await admin.from('messages').insert([
+    const { error: conv5MsgError } = await admin.from('messages').insert([
       {
         conversation_id: conv5.id,
         role: 'user',
@@ -492,10 +516,11 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
         created_at: hoursAgo(5.8),
       },
     ]);
+    assertSeedWrite(conv5MsgError, 'conversation 5 messages insert');
   }
 
   // ── 7. Audit log ───────────────────────────────────────────────────────────
-  await admin.from('audit_log').insert({
+  await writeAuditLog({
     operator_id: operatorId,
     event_id: eventId,
     actor_type: 'user',

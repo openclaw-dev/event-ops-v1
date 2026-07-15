@@ -84,18 +84,35 @@ export async function addRecipients(params: {
   const added = (data ?? []).length;
 
   // Increment total_recipients (don't overwrite — addRecipients may be called multiple times).
-  const { data: current } = await admin
+  // NOTE: this remains a racy read-modify-write; 1.5 only asks for the error/zero-rows
+  // guard so a silent no-op surfaces, not for an atomic increment.
+  const { data: current, error: readError } = await admin
     .from('crm_campaigns')
     .select('total_recipients')
     .eq('id', params.campaign_id)
     .single();
 
+  if (readError) {
+    console.error('[crm/addRecipients] total_recipients read failed', {
+      campaign_id: params.campaign_id,
+      error: readError.message,
+    });
+  }
+
   const newTotal = ((current as { total_recipients: number } | null)?.total_recipients ?? 0) + added;
 
-  await admin
+  const { data: updatedCampaign, error: totalError } = await admin
     .from('crm_campaigns')
     .update({ total_recipients: newTotal, updated_at: new Date().toISOString() })
-    .eq('id', params.campaign_id);
+    .eq('id', params.campaign_id)
+    .select('id');
+
+  if (totalError || !updatedCampaign || updatedCampaign.length === 0) {
+    console.error('[crm/addRecipients] total_recipients update failed', {
+      campaign_id: params.campaign_id,
+      error: totalError?.message ?? 'zero rows affected',
+    });
+  }
 
   return { added };
 }
@@ -135,11 +152,42 @@ export async function sendCampaign(
     targetEventName = (targetEvent as { name: string } | null)?.name ?? '';
   }
 
-  // Mark campaign as sending.
-  await admin
+  // Atomically claim the campaign: transition draft→sending in a single
+  // conditional update. If zero rows come back another send already claimed it
+  // (or it is not in draft) — abort so two concurrent sends cannot both proceed
+  // and double-message customers (audit 6.2).
+  const { data: claimed, error: claimError } = await admin
     .from('crm_campaigns')
     .update({ status: 'sending', updated_at: new Date().toISOString() })
-    .eq('id', campaign_id);
+    .eq('id', campaign_id)
+    .eq('status', 'draft')
+    .select('id');
+
+  if (claimError) {
+    throw new Error(`Failed to claim campaign for sending: ${claimError.message}`);
+  }
+  if (!claimed || claimed.length === 0) {
+    console.warn('[crm/sendCampaign] campaign not in draft state — already claimed, aborting', {
+      campaign_id,
+    });
+    return { sent: 0, failed: 0 };
+  }
+
+  // Per-recipient status write helper — every write is checked and logged so a
+  // silent failure no longer leaves a recipient stuck 'pending' (audit 6.2).
+  const markRecipient = async (id: string, patch: Record<string, unknown>): Promise<void> => {
+    const { error } = await admin
+      .from('crm_campaign_recipients')
+      .update(patch)
+      .eq('id', id);
+    if (error) {
+      console.error('[crm/sendCampaign] recipient status write failed', {
+        recipient_id: id,
+        patch_status: patch.status ?? null,
+        error: error.message,
+      });
+    }
+  };
 
   // Fetch all pending recipients.
   const { data: recipientsData } = await admin
@@ -161,11 +209,11 @@ export async function sendCampaign(
     // WhatsApp not configured — mark all recipients failed.
     const errMsg = err instanceof Error ? err.message : String(err);
     for (const r of recipients) {
-      await admin
-        .from('crm_campaign_recipients')
-        .update({ status: 'failed' })
-        .eq('id', r.id);
+      await markRecipient(r.id, { status: 'failed' });
     }
+    // NOTE: campaign-level status 'failed' is rejected by the 0027 CHECK
+    // (draft|sending|sent|paused|cancelled) — that is finding 1.3 (invalid
+    // enum), out of scope for this silent-failure sweep; left unchanged.
     await admin
       .from('crm_campaigns')
       .update({ status: 'failed', sent_count: 0, updated_at: new Date().toISOString() })
@@ -197,31 +245,29 @@ export async function sendCampaign(
 
       if (result.success) {
         sent++;
-        await admin
-          .from('crm_campaign_recipients')
-          .update({
-            status: 'sent',
-            sent_at: now,
-            wamid: result.wamid ?? null,
-          })
-          .eq('id', recipient.id);
+        await markRecipient(recipient.id, {
+          status: 'sent',
+          sent_at: now,
+          wamid: result.wamid ?? null,
+        });
       } else {
         failed++;
-        await admin
-          .from('crm_campaign_recipients')
-          .update({ status: 'failed' })
-          .eq('id', recipient.id);
+        await markRecipient(recipient.id, { status: 'failed' });
       }
-    } catch {
+    } catch (sendErr) {
       failed++;
-      await admin
-        .from('crm_campaign_recipients')
-        .update({ status: 'failed' })
-        .eq('id', recipient.id);
+      console.error('[crm/sendCampaign] send threw for recipient', {
+        recipient_id: recipient.id,
+        error: sendErr instanceof Error ? sendErr.message : String(sendErr),
+      });
+      await markRecipient(recipient.id, { status: 'failed' });
     }
   }
 
   // Update campaign stats — preserve total_recipients set by addRecipients.
+  // NOTE: 'send_failed'/'partial' are rejected by the 0027 status CHECK — that
+  // is finding 1.3 (invalid enum), out of scope for this sweep; left unchanged
+  // so it is not silently masked. Only fully-successful ('sent') writes persist.
   const finalStatus = sent === 0 ? 'send_failed' : failed > 0 ? 'partial' : 'sent';
   await admin
     .from('crm_campaigns')

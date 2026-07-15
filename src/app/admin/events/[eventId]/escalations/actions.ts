@@ -2,8 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { createAdminClient } from '@/lib/supabase/admin';
 import { createServerClient } from '@/lib/supabase/server';
+import { writeAuditLog } from '@/lib/audit/write-audit-log';
 
 interface ActionResult {
   error?: string;
@@ -79,8 +79,7 @@ async function writeAudit(
   escalationId: string,
   metadata: Record<string, unknown>,
 ): Promise<void> {
-  const admin = createAdminClient();
-  await admin.from('audit_log').insert({
+  await writeAuditLog({
     operator_id: operatorId,
     event_id: eventId,
     actor_type: 'user',
@@ -110,7 +109,7 @@ export async function claimEscalation(
   }
 
   const supabase = createServerClient();
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from('escalations')
     .update({
       status: 'claimed',
@@ -118,9 +117,13 @@ export async function claimEscalation(
       updated_at: new Date().toISOString(),
     })
     .eq('id', escalationId)
-    .eq('event_id', eventId);
+    .eq('event_id', eventId)
+    .select('id');
 
   if (error) return { error: error.message };
+  if (!updated || updated.length === 0) {
+    return { error: 'Claim affected no rows — the escalation may have changed. Refresh and retry.' };
+  }
 
   await writeAudit(
     eventId,
@@ -151,7 +154,7 @@ export async function resolveEscalation(
   }
 
   const supabase = createServerClient();
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from('escalations')
     .update({
       status: 'resolved',
@@ -160,9 +163,13 @@ export async function resolveEscalation(
       updated_at: new Date().toISOString(),
     })
     .eq('id', escalationId)
-    .eq('event_id', eventId);
+    .eq('event_id', eventId)
+    .select('id');
 
   if (error) return { error: error.message };
+  if (!updated || updated.length === 0) {
+    return { error: 'Resolve affected no rows — the escalation may have changed. Refresh and retry.' };
+  }
 
   await writeAudit(
     eventId,
@@ -199,7 +206,7 @@ export async function reopenEscalation(
   }
 
   const supabase = createServerClient();
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from('escalations')
     .update({
       status: 'reopened',
@@ -209,9 +216,13 @@ export async function reopenEscalation(
       updated_at: new Date().toISOString(),
     })
     .eq('id', escalationId)
-    .eq('event_id', eventId);
+    .eq('event_id', eventId)
+    .select('id');
 
   if (error) return { error: error.message };
+  if (!updated || updated.length === 0) {
+    return { error: 'Reopen affected no rows — the escalation may have changed. Refresh and retry.' };
+  }
 
   await writeAudit(
     eventId,

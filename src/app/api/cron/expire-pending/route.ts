@@ -21,26 +21,31 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  try {
-    const [pendingCount, recoveryCount, purgedMessages] = await Promise.all([
-      expireStalePendingChanges(),
-      expireStaleRecoveryAttempts(),
-      purgeProcessedMessages(),
-    ]);
-    console.log(`[cron/expire-pending] Expired ${pendingCount} stale pending changes`);
-    console.log(`[cron/expire-pending] Expired ${recoveryCount} stale recovery attempts`);
-    console.log(`[cron/expire-pending] Purged ${purgedMessages} processed WhatsApp messages`);
-    return NextResponse.json({
-      expired_pending: pendingCount,
-      expired_recovery: recoveryCount,
-      purged_messages: purgedMessages,
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[cron/expire-pending] failed:', err);
-    return NextResponse.json(
-      { error: msg, expired_pending: 0, expired_recovery: 0, purged_messages: 0 },
-      { status: 200 },
-    );
-  }
+  // allSettled so one failing job never discards the others' results (audit
+  // 6.11). A failed job reports null (distinct from 0 rows affected).
+  const [pendingRes, recoveryRes, purgeRes] = await Promise.allSettled([
+    expireStalePendingChanges(),
+    expireStaleRecoveryAttempts(),
+    purgeProcessedMessages(),
+  ]);
+
+  const jobResult = (res: PromiseSettledResult<number>, name: string): number | null => {
+    if (res.status === 'fulfilled') return res.value;
+    console.error(`[cron/expire-pending] ${name} failed:`, res.reason);
+    return null;
+  };
+
+  const expired_pending = jobResult(pendingRes, 'expireStalePendingChanges');
+  const expired_recovery = jobResult(recoveryRes, 'expireStaleRecoveryAttempts');
+  const purged_messages = jobResult(purgeRes, 'purgeProcessedMessages');
+
+  console.log(
+    `[cron/expire-pending] pending=${expired_pending} recovery=${expired_recovery} purged=${purged_messages}`,
+  );
+
+  const allSucceeded = [pendingRes, recoveryRes, purgeRes].every((r) => r.status === 'fulfilled');
+  return NextResponse.json(
+    { expired_pending, expired_recovery, purged_messages, all_succeeded: allSucceeded },
+    { status: 200 },
+  );
 }

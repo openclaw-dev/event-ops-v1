@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 
 import { createServerClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { writeAuditLog } from '@/lib/audit/write-audit-log';
 import { type EventSetupFormData } from '@/lib/schemas';
 import { type EventConfig } from '@/lib/types';
 import { resolveActiveOperatorId } from '@/lib/get-active-operator';
@@ -95,13 +95,25 @@ export async function createEvent(
     return { error: msg };
   }
 
-  // Patch config.event_id now that we have the real UUID.
+  // Patch config.event_id now that we have the real UUID (zero-rows guard —
+  // on a silent no-op config.event_id would stay '' forever). See audit 1.5.
   const finalConfig: EventConfig = { ...config, event_id: event.id };
-  await supabase.from('events').update({ config: finalConfig }).eq('id', event.id);
+  const { data: patched, error: patchError } = await supabase
+    .from('events')
+    .update({ config: finalConfig })
+    .eq('id', event.id)
+    .select('id');
+
+  if (patchError || !patched || patched.length === 0) {
+    return {
+      error: `Event created, but writing its ID into config failed: ${
+        patchError?.message ?? 'no rows affected'
+      }. Open the event and re-save its settings.`,
+    };
+  }
 
   // Write audit log (service-role — audit_log has no user INSERT policy).
-  const admin = createAdminClient();
-  await admin.from('audit_log').insert({
+  await writeAuditLog({
     operator_id: operatorId,
     event_id: event.id,
     actor_type: 'user',

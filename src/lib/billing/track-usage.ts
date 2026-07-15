@@ -97,7 +97,10 @@ export async function trackUsage(params: UsageParams): Promise<void> {
     );
 
     const admin = createAdminClient();
-    await admin.from('usage_events').insert({
+    // supabase-js returns { error } rather than throwing, so the surrounding
+    // try/catch never saw insert failures — the cost dashboard silently
+    // under-reported (audit 6.6). Check and log the returned error explicitly.
+    const { error } = await admin.from('usage_events').insert({
       operator_id: params.operator_id,
       event_id: params.event_id ?? null,
       event_type: params.event_type,
@@ -107,7 +110,17 @@ export async function trackUsage(params: UsageParams): Promise<void> {
       cache_read_tokens: cacheRead,
       cost_usd: cost,
     });
-  } catch {
-    // Swallow all errors — usage tracking must never break the main flow.
+
+    if (error) {
+      console.error('[track-usage] usage_events insert failed', {
+        operator_id: params.operator_id,
+        event_type: params.event_type,
+        error: error.message,
+      });
+    }
+  } catch (err) {
+    // Swallow all errors — usage tracking must never break the main flow —
+    // but log so a systemic failure is visible.
+    console.error('[track-usage] unexpected failure (swallowed):', err);
   }
 }

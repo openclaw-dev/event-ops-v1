@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { createServerClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { writeAuditLog } from '@/lib/audit/write-audit-log';
 import { parseMarkdown } from '@/lib/parsers/kb-markdown';
 import { parseJson } from '@/lib/parsers/kb-json';
 import { xlsxToMarkdown, docxToMarkdown } from '@/lib/kb/converters';
@@ -225,14 +226,21 @@ export async function POST(request: Request) {
     }
   }
 
-  // ── 8. Update section_count on the document ──────────────────────────────
-  await supabase
+  // ── 8. Update section_count on the document (zero-rows guard) ─────────────
+  const { data: countUpdated, error: countError } = await supabase
     .from('kb_documents')
     .update({ section_count: sectionsParsed })
-    .eq('id', kbDoc.id);
+    .eq('id', kbDoc.id)
+    .select('id');
+  if (countError || !countUpdated || countUpdated.length === 0) {
+    console.error('[kb/upload] section_count update failed', {
+      kb_document_id: kbDoc.id,
+      error: countError?.message ?? 'zero rows affected',
+    });
+  }
 
   // ── 9. Audit log (service-role) ──────────────────────────────────────────
-  await admin.from('audit_log').insert({
+  await writeAuditLog({
     operator_id: event.operator_id,
     event_id: eventId,
     actor_type: 'user',

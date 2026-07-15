@@ -19,7 +19,7 @@
 import { NextResponse } from 'next/server';
 
 import { createServerClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { writeAuditLog } from '@/lib/audit/write-audit-log';
 import { resolveActiveOperatorId } from '@/lib/get-active-operator';
 import type { EventConfig } from '@/lib/types';
 
@@ -151,20 +151,34 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 
-  // ── 6. Patch config.event_id ─────────────────────────────────────────────
+  // ── 6. Patch config.event_id (zero-rows guard — audit 1.5) ───────────────
   const finalConfig: EventConfig = { ...config, event_id: event.id as string };
-  await supabase.from('events').update({ config: finalConfig }).eq('id', event.id);
+  const { data: patched, error: patchError } = await supabase
+    .from('events')
+    .update({ config: finalConfig })
+    .eq('id', event.id)
+    .select('id');
+
+  if (patchError || !patched || patched.length === 0) {
+    return NextResponse.json(
+      {
+        error: `Event created, but writing its ID into config failed: ${
+          patchError?.message ?? 'no rows affected'
+        }.`,
+      },
+      { status: 500 },
+    );
+  }
 
   // ── 7. Audit log ─────────────────────────────────────────────────────────
-  const admin = createAdminClient();
-  await admin.from('audit_log').insert({
+  await writeAuditLog({
     operator_id: operatorId,
-    event_id: event.id,
+    event_id: event.id as string,
     actor_type: 'user',
     actor_id: user.id,
     action: 'event.created',
     entity_type: 'event',
-    entity_id: event.id,
+    entity_id: event.id as string,
     metadata: { name: trimmedName, slug, via: 'api' },
   });
 

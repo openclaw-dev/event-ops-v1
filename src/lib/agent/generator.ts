@@ -369,7 +369,10 @@ export async function generateCitedReply(input: GenerateInput): Promise<Generati
           ((resp.usage as unknown) as Record<string, unknown>).cache_read_input_tokens as number ?? 0,
       },
     };
-  } catch {
+  } catch (err) {
+    // Generation failed — escalate with zero confidence. Log the cause so a
+    // mystery escalation is traceable to the API failure (audit 6.10).
+    console.error('[generator] generation failed — escalating with zero confidence:', err);
     return {
       response_text: '',
       language_used: input.language,

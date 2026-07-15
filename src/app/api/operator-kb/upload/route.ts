@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { createServerClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { writeAuditLog } from '@/lib/audit/write-audit-log';
 import { parseMarkdown } from '@/lib/parsers/kb-markdown';
 import { parseJson } from '@/lib/parsers/kb-json';
 
@@ -135,7 +136,7 @@ export async function POST(request: Request) {
   }
 
   // ── 6. Audit log (service-role) ──────────────────────────────────────────
-  await admin.from('audit_log').insert({
+  await writeAuditLog({
     operator_id: operatorId,
     event_id: null,
     actor_type: 'user',

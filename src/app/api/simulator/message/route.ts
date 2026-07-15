@@ -13,8 +13,8 @@ import type {
   Language,
   OrderContext,
 } from '@/lib/agent/types';
-import { createAdminClient } from '@/lib/supabase/admin';
 import { createServerClient } from '@/lib/supabase/server';
+import { writeAuditLog } from '@/lib/audit/write-audit-log';
 import type { EventConfig } from '@/lib/types';
 import { notifyEscalationContacts } from '@/lib/agent/escalation-notifier';
 
@@ -115,7 +115,6 @@ export async function POST(request: Request) {
 
   // ── 2. Auth + event access (RLS) ─────────────────────────────────────────
   const supabase = createServerClient();
-  const admin = createAdminClient();
 
   const {
     data: { user },
@@ -323,7 +322,7 @@ export async function POST(request: Request) {
   }
 
   // ── 11. Audit (admin client — RLS forbids user INSERT on audit_log) ──────
-  await admin.from('audit_log').insert({
+  await writeAuditLog({
     operator_id: event.operator_id,
     event_id: eventId,
     actor_type: 'agent',

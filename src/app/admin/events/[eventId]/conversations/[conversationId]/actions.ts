@@ -74,14 +74,24 @@ export async function sendHumanReply(
 
   if (msgError) return { success: false, error: msgError.message };
 
-  // ── Mark conversation closed ──────────────────────────────────────────────
-  await admin
+  // ── Mark conversation closed (zero-rows guard) ────────────────────────────
+  const { data: closedRows, error: closeError } = await admin
     .from('conversations')
     .update({ state: 'session_closed', closed_at: new Date().toISOString() })
-    .eq('id', conversationId);
+    .eq('id', conversationId)
+    .select('id');
+
+  if (closeError) return { success: false, error: closeError.message };
+  if (!closedRows || closedRows.length === 0) {
+    return { success: false, error: 'Conversation could not be closed — it may have been deleted.' };
+  }
 
   // ── Deliver via WhatsApp if applicable ────────────────────────────────────
+  // A delivery failure MUST surface to the operator: the reply is saved in the
+  // DB, but the customer never received it (audit 6.1 — previously a warn-only
+  // path that still returned success: true).
   if (convo.channel === 'whatsapp' && convo.customer_phone_e164) {
+    let deliveryError: string | null = null;
     try {
       const adapter = createWhatsAppAdapter();
       const result = await adapter.sendText({
@@ -89,12 +99,21 @@ export async function sendHumanReply(
         text,
       });
       if (!result.success) {
-        console.warn('[sendHumanReply] WhatsApp delivery failed:', result.error);
+        deliveryError = result.error ?? 'unknown delivery error';
+        console.warn('[sendHumanReply] WhatsApp delivery failed:', deliveryError);
       }
     } catch (err) {
-      // Non-fatal: the message is recorded in the DB regardless.
-      // This fires when WHATSAPP_PROVIDER is unset or the adapter throws.
+      // Fires when WHATSAPP_PROVIDER is unset or the adapter throws.
+      deliveryError = err instanceof Error ? err.message : String(err);
       console.warn('[sendHumanReply] WhatsApp adapter unavailable:', err);
+    }
+
+    if (deliveryError) {
+      revalidatePath(`/admin/events/${eventId}/conversations/${conversationId}`);
+      return {
+        success: false,
+        error: `Reply saved, but WhatsApp delivery failed: ${deliveryError}. The customer did NOT receive it.`,
+      };
     }
   }
 

@@ -85,7 +85,7 @@ export async function resolveEventForOperator(
   // Upper bound: today's date (draft events with a FUTURE end_date are not yet ended).
   const today = now.toISOString().split('T')[0];
 
-  const { data } = await admin
+  const { data, error } = await admin
     .from('events')
     .select('id, name, start_date, end_date, status, config')
     .eq('operator_id', operatorId)
@@ -100,6 +100,14 @@ export async function resolveEventForOperator(
     .is('deleted_at', null)
     .order('start_date', { ascending: true })
     .limit(5);
+
+  // Throw on a real DB error so the inbound route's catch sends the generic
+  // error reply — a swallowed error must never masquerade as "no active
+  // events" (audit 6.3). Error-checking only; the routing query is unchanged.
+  if (error) {
+    console.error('[whatsapp-router] resolveEventForOperator query failed:', error.message);
+    throw new Error(`resolveEventForOperator failed: ${error.message}`);
+  }
 
   const events = (data ?? []) as Array<{
     id: string;

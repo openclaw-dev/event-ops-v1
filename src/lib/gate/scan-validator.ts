@@ -73,7 +73,7 @@ export async function validateAndRecordScan(params: ValidateScanParams): Promise
     .maybeSingle();
 
   if (existing) {
-    await supabase.from('gate_scans').insert({
+    const { error: dupInsertError } = await supabase.from('gate_scans').insert({
       operator_id: params.operator_id,
       event_id: params.event_id,
       scanned_code: code,
@@ -84,6 +84,15 @@ export async function validateAndRecordScan(params: ValidateScanParams): Promise
       scanner_device: params.scanner_device,
       scanned_by_user_id: params.scanned_by_user_id ?? null,
     });
+    if (dupInsertError) {
+      // Non-fatal (the gate decision below still stands) but must be logged —
+      // a dropped history row undercounts gate stats (audit 6.12).
+      console.error('[gate/scan-validator] duplicate scan-history insert failed', {
+        event_id: params.event_id,
+        code,
+        error: dupInsertError.message,
+      });
+    }
 
     const time = formatTime(existing.created_at as string);
     return {
@@ -104,7 +113,7 @@ export async function validateAndRecordScan(params: ValidateScanParams): Promise
     .maybeSingle();
 
   if (!order) {
-    await supabase.from('gate_scans').insert({
+    const { error: notFoundInsertError } = await supabase.from('gate_scans').insert({
       operator_id: params.operator_id,
       event_id: params.event_id,
       scanned_code: code,
@@ -113,6 +122,13 @@ export async function validateAndRecordScan(params: ValidateScanParams): Promise
       scanner_device: params.scanner_device,
       scanned_by_user_id: params.scanned_by_user_id ?? null,
     });
+    if (notFoundInsertError) {
+      console.error('[gate/scan-validator] not_found scan-history insert failed', {
+        event_id: params.event_id,
+        code,
+        error: notFoundInsertError.message,
+      });
+    }
 
     return {
       result: 'not_found',

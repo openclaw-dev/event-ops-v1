@@ -4,6 +4,7 @@ import type { z } from 'zod';
 
 import { createServerClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { writeAuditLog } from '@/lib/audit/write-audit-log';
 import { orderRowSchema } from '@/lib/schemas';
 
 const MAX_BYTES = 10 * 1024 * 1024;   // 10 MB
@@ -181,7 +182,7 @@ export async function POST(request: Request) {
   });
 
   if (parsed.data.length > MAX_ROWS) {
-    await finalise(supabase, admin, importId, 0, parsed.data.length, event.operator_id, user.id, 'failed');
+    await finalise(supabase, importId, 0, parsed.data.length, event.operator_id, user.id, 'failed');
     return NextResponse.json(
       { error: `CSV exceeds the 100 000-row limit (got ${parsed.data.length} rows).` },
       { status: 422 },
@@ -259,9 +260,18 @@ export async function POST(request: Request) {
     }));
 
     for (let i = 0; i < errorRows.length; i += BATCH) {
-      await supabase
+      const { error: errRowsError } = await supabase
         .from('order_import_errors')
         .insert(errorRows.slice(i, i + BATCH));
+      if (errRowsError) {
+        // The per-row error records themselves must not vanish silently — the
+        // operator relies on them to fix the sheet (audit 6.12).
+        console.error('[orders/import] order_import_errors insert failed', {
+          import_id: importId,
+          batch_start: i,
+          error: errRowsError.message,
+        });
+      }
     }
   }
 
@@ -269,7 +279,6 @@ export async function POST(request: Request) {
   const finalStatus = upsertedCount === 0 ? 'failed' : 'completed';
   await finalise(
     supabase,
-    admin,
     importId,
     upsertedCount,
     rowErrors.length,
@@ -291,8 +300,6 @@ export async function POST(request: Request) {
 async function finalise(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  admin: any,
   importId: string,
   rowCount: number,
   errorCount: number,
@@ -300,18 +307,25 @@ async function finalise(
   userId: string,
   status: 'completed' | 'failed',
 ) {
-  await supabase
+  const { data: finalised, error: finaliseError } = await supabase
     .from('order_imports')
     .update({ status, row_count: rowCount, error_count: errorCount })
-    .eq('id', importId);
+    .eq('id', importId)
+    .select('id');
+  if (finaliseError || !finalised || finalised.length === 0) {
+    console.error('[orders/import] order_imports finalise update failed', {
+      import_id: importId,
+      error: finaliseError?.message ?? 'zero rows affected',
+    });
+  }
 
-  await admin.from('audit_log').insert({
-    operator_id:  operatorId,
-    actor_type:   'user',
-    actor_id:     userId,
-    action:       'orders.imported',
-    entity_type:  'order_import',
-    entity_id:    importId,
-    metadata:     { row_count: rowCount, error_count: errorCount, status },
+  await writeAuditLog({
+    operator_id: operatorId,
+    actor_type: 'user',
+    actor_id: userId,
+    action: 'orders.imported',
+    entity_type: 'order_import',
+    entity_id: importId,
+    metadata: { row_count: rowCount, error_count: errorCount, status },
   });
 }

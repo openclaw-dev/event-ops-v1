@@ -480,11 +480,14 @@ export async function normaliseSheet(buf: Buffer, operatorId?: string): Promise<
           const needs_review_count = mappings.filter((m) => m.needs_review).length;
 
           // Update last_used_at to track recency.
-          await admin
+          const { error: touchError } = await admin
             .from('mastersheet_mappings')
             .update({ last_used_at: new Date().toISOString() })
             .eq('operator_id', operatorId)
             .eq('format_fingerprint', fingerprint);
+          if (touchError) {
+            console.warn('[normaliser] cache last_used_at update failed:', touchError.message);
+          }
 
           return {
             success: true,
@@ -594,7 +597,10 @@ export async function normaliseSheet(buf: Buffer, operatorId?: string): Promise<
         confidenceScores[m.source_column] = m.confidence;
       }
 
-      await admin.from('mastersheet_mappings').upsert(
+      // supabase-js returns { error } rather than throwing, so the catch below
+      // never saw a failed upsert — the cache silently degraded to always-Haiku
+      // (audit 6.12). Check the returned error explicitly.
+      const { error: cacheStoreError } = await admin.from('mastersheet_mappings').upsert(
         {
           operator_id: operatorId,
           mapping_name: fingerprint,
@@ -607,8 +613,14 @@ export async function normaliseSheet(buf: Buffer, operatorId?: string): Promise<
         },
         { onConflict: 'operator_id,mapping_name' },
       );
+      if (cacheStoreError) {
+        console.warn(
+          '[normaliser] cache store failed (mapping cache will miss next time):',
+          cacheStoreError.message,
+        );
+      }
     } catch (err) {
-      console.warn('[normaliser] cache store failed:', err);
+      console.warn('[normaliser] cache store threw:', err);
     }
   }
 

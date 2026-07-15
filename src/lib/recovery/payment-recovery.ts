@@ -114,6 +114,22 @@ export async function sendRecoveryMessage(params: {
     `Complete your payment here:\n${a.payment_link ?? ''}\n\n` +
     `This link expires in 24 hours. Reply STOP to opt out.`;
 
+  // Per-attempt status write helper — every write is checked and logged so a
+  // silent failure no longer leaves an attempt stuck 'pending' (audit 6.2).
+  const markAttempt = async (patch: Record<string, unknown>): Promise<void> => {
+    const { error } = await admin
+      .from('payment_recovery_attempts')
+      .update(patch)
+      .eq('id', params.recovery_attempt_id);
+    if (error) {
+      console.error('[recovery/sendRecoveryMessage] attempt status write failed', {
+        recovery_attempt_id: params.recovery_attempt_id,
+        patch_status: patch.status ?? null,
+        error: error.message,
+      });
+    }
+  };
+
   try {
     const adapter = createWhatsAppAdapter();
     const result = await adapter.sendText({
@@ -122,28 +138,19 @@ export async function sendRecoveryMessage(params: {
     });
 
     if (result.success) {
-      await admin
-        .from('payment_recovery_attempts')
-        .update({
-          status: 'sent',
-          sent_at: new Date().toISOString(),
-          whatsapp_message_wamid: result.wamid ?? null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', params.recovery_attempt_id);
+      await markAttempt({
+        status: 'sent',
+        sent_at: new Date().toISOString(),
+        whatsapp_message_wamid: result.wamid ?? null,
+        updated_at: new Date().toISOString(),
+      });
     } else {
-      await admin
-        .from('payment_recovery_attempts')
-        .update({ status: 'failed', updated_at: new Date().toISOString() })
-        .eq('id', params.recovery_attempt_id);
+      await markAttempt({ status: 'failed', updated_at: new Date().toISOString() });
     }
 
     return { success: result.success, wamid: result.wamid, error: result.error };
   } catch (err) {
-    await admin
-      .from('payment_recovery_attempts')
-      .update({ status: 'failed', updated_at: new Date().toISOString() })
-      .eq('id', params.recovery_attempt_id);
+    await markAttempt({ status: 'failed', updated_at: new Date().toISOString() });
     return {
       success: false,
       error: err instanceof Error ? err.message : String(err),
@@ -157,14 +164,26 @@ export async function markRecoveryCompleted(
   recovery_attempt_id: string,
 ): Promise<void> {
   const admin = createAdminClient();
-  await admin
+  // Zero-rows guard (audit 1.5): recovery-fee stats depend on this transition,
+  // so a silent no-op must surface as a thrown error rather than a false success.
+  const { data, error } = await admin
     .from('payment_recovery_attempts')
     .update({
       status: 'completed',
       completed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
-    .eq('id', recovery_attempt_id);
+    .eq('id', recovery_attempt_id)
+    .select('id');
+
+  if (error) {
+    throw new Error('markRecoveryCompleted failed: ' + error.message);
+  }
+  if (!data || data.length === 0) {
+    throw new Error(
+      `markRecoveryCompleted: no recovery attempt found for id ${recovery_attempt_id}`,
+    );
+  }
 }
 
 // ─── getRecoveryStats ─────────────────────────────────────────────────────────

@@ -192,9 +192,11 @@ export async function classifyMessage(
       escalate_immediately: coerceBool(parsed.escalate_immediately, false),
       confidence: coerceFloat(parsed.confidence, 0, 1, 0.5),
     };
-  } catch {
+  } catch (err) {
     // Defense-in-depth: when the classifier itself fails, hand the conversation
-    // to a human instead of silently misrouting.
+    // to a human instead of silently misrouting. Log the cause so escalations
+    // are not a mystery (audit 6.10).
+    console.error('[classifier] classification failed — defaulting to escalate:', err);
     return {
       intent: 'other',
       language: 'en',

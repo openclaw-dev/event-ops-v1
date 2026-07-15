@@ -563,7 +563,7 @@ export async function confirmPendingChange(args: {
 
   // ── Step 10: UPDATE pending_changes with downstream linkage ──────────────
   const changeEventIds = changeEventId ? [changeEventId] : [];
-  await supabase
+  const { error: linkageError } = await supabase
     .from('pending_changes')
     .update({
       change_event_ids: changeEventIds,
@@ -572,6 +572,15 @@ export async function confirmPendingChange(args: {
       updated_at: new Date().toISOString(),
     })
     .eq('id', args.pending_change_id);
+  if (linkageError) {
+    // Non-fatal (the change is already applied and confirmed) but must not be
+    // silent — the row would otherwise lose its change_event/dato linkage
+    // without any trace (audit 6.12).
+    console.error('[confirmPendingChange] step-10 linkage update failed', {
+      pending_change_id: args.pending_change_id,
+      error: linkageError.message,
+    });
+  }
 
   return {
     status: 'confirmed',

@@ -47,20 +47,38 @@ export async function GET(req: NextRequest) {
     const period = formatPeriod(weekAgo, new Date(now.getTime() - 24 * 60 * 60 * 1000));
 
     // ── Fetch all operators ────────────────────────────────────────────────
-    const { data: operatorRows } = await admin.from('operators').select('id, name');
+    // Distinguish a DB failure from a genuinely quiet week (audit 6.11): a
+    // swallowed error here would read as "0 operators" and fake a clean run.
+    const { data: operatorRows, error: operatorsError } = await admin
+      .from('operators')
+      .select('id, name');
+    if (operatorsError) {
+      console.error('[cron/weekly-digest] operators query failed:', operatorsError.message);
+      return NextResponse.json(
+        { error: `operators query failed: ${operatorsError.message}`, sent: 0, db_error: true },
+        { status: 200 },
+      );
+    }
     const operators = (operatorRows ?? []) as { id: string; name: string }[];
     if (operators.length === 0) {
-      return NextResponse.json({ sent: 0, skipped: 0, results: [] });
+      return NextResponse.json({ sent: 0, skipped: 0, results: [], reason: 'no operators' });
     }
 
     // ── Batch-load all events for all operators in ONE query ───────────────
     // Avoids N round-trips to Supabase inside the per-operator loop.
     const operatorIds = operators.map((o) => o.id);
-    const { data: allEventRows } = await admin
+    const { data: allEventRows, error: eventsError } = await admin
       .from('events')
       .select('id, name, config, operator_id')
       .in('operator_id', operatorIds)
       .is('deleted_at', null);
+    if (eventsError) {
+      console.error('[cron/weekly-digest] events query failed:', eventsError.message);
+      return NextResponse.json(
+        { error: `events query failed: ${eventsError.message}`, sent: 0, db_error: true },
+        { status: 200 },
+      );
+    }
 
     const eventsByOperator = new Map<
       string,

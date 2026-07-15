@@ -92,10 +92,12 @@ export async function sendEmail(params: {
     return { success: true };
   }
 
-  // ── Dev fallback ─────────────────────────────────────────────────────────────
-  console.log('[sendEmail] DEV MODE — no provider configured. Email not sent.');
+  // ── No provider configured ───────────────────────────────────────────────────
+  // Return success:false so a missing RESEND_API_KEY in production cannot fake a
+  // "sent" result (audit 6.11). The details are still logged for local dev.
+  console.warn('[sendEmail] No email provider configured — email NOT sent.');
   console.log(`  To:      ${to}`);
   console.log(`  Subject: ${subject}`);
   console.log(`  Body:    ${html.length} chars (HTML)`);
-  return { success: true };
+  return { success: false, error: 'No email provider configured (set RESEND_API_KEY or SENDGRID_API_KEY).' };
 }
