@@ -24,8 +24,16 @@ import type { EventConfig } from '@/lib/types';
  */
 export async function GET(req: NextRequest) {
   // ── Auth ──────────────────────────────────────────────────────────────────
+  // Fail closed if the secret is not configured — an unset CRON_SECRET must
+  // NEVER become the literal comparison `Bearer undefined` (an auth bypass).
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    console.error('[cron/weekly-digest] CRON_SECRET is not set — refusing to run');
+    return NextResponse.json({ error: 'server misconfigured' }, { status: 500 });
+  }
+
   const authHeader = req.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 

@@ -344,7 +344,13 @@ export async function confirmPendingChange(args: {
   actor_promoter_id?: string;
   via: 'whatsapp' | 'dashboard';
 }): Promise<
-  | { status: 'confirmed'; change_event_ids: string[]; dato: 'skipped' | 'success' | 'failed' }
+  | {
+      status: 'confirmed';
+      change_event_ids: string[];
+      dato: 'skipped' | 'success' | 'failed';
+      kb_sections_updated: string[];
+      kb_failed: Array<{ section_id: string; reason: string }>;
+    }
   | { status: 'race_lost'; current: PendingChange }
   | { status: 'expired' }
   | { status: 'not_found' }
@@ -479,18 +485,24 @@ export async function confirmPendingChange(args: {
     }
   }
 
-  // ── Step 7: propagateToKB (non-fatal) ────────────────────────────────────
+  // ── Step 7: propagateToKB ────────────────────────────────────────────────
+  // Non-fatal to the change confirmation, but KB failures are surfaced in the
+  // return value (audit 1.2) rather than silently swallowed.
   // Deduplicate bare names (e.g. two config.refund_policy.* changes → one 'refund_policy').
   const uniqueBareNames = Array.from(new Set(changedBareNames));
   let kbSectionsUpdated: string[] = [];
+  let kbFailed: Array<{ section_id: string; reason: string }> = [];
   try {
-    kbSectionsUpdated = await propagateToKB(
+    const kbResult = await propagateToKB(
       pendingRow.event_id,
       uniqueBareNames,
       newValues,
     );
+    kbSectionsUpdated = kbResult.updated;
+    kbFailed = kbResult.failed;
   } catch (err) {
     console.error('[confirmPendingChange] propagateToKB failed:', err);
+    kbFailed = [{ section_id: '*', reason: err instanceof Error ? err.message : String(err) }];
   }
 
   // ── Step 8: recordChangeEvent (non-fatal) ────────────────────────────────
@@ -561,5 +573,11 @@ export async function confirmPendingChange(args: {
     })
     .eq('id', args.pending_change_id);
 
-  return { status: 'confirmed', change_event_ids: changeEventIds, dato: datoStatus };
+  return {
+    status: 'confirmed',
+    change_event_ids: changeEventIds,
+    dato: datoStatus,
+    kb_sections_updated: kbSectionsUpdated,
+    kb_failed: kbFailed,
+  };
 }

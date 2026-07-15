@@ -56,6 +56,20 @@ export async function POST(
 
   switch (result.status) {
     case 'confirmed':
+      // The change was applied and audited. If KB propagation failed for any
+      // section, surface it as an error rather than a clean success (audit 1.2)
+      // — a stale KB will answer customers with the old value.
+      if (result.kb_failed.length > 0) {
+        return NextResponse.json(
+          {
+            ...result,
+            error: `Change applied, but KB propagation failed for: ${result.kb_failed
+              .map((f) => f.section_id)
+              .join(', ')}. The KB may be stale — retry, or edit those sections manually.`,
+          },
+          { status: 500 },
+        );
+      }
       return NextResponse.json(result, { status: 200 });
 
     case 'race_lost':

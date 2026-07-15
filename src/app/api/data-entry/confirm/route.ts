@@ -237,12 +237,20 @@ export async function POST(request: Request): Promise<NextResponse> {
   // ── 7. Record change event ───────────────────────────────────────────────
   const changedFieldKeys = Object.keys(newValuesFlat);
 
-  // propagateToKB is best-effort — a KB error must never block the audit write.
+  // Propagate to KB. A KB failure must never block the audit write below, but
+  // it must be surfaced to the caller (audit 1.2) instead of silently
+  // reporting a clean success with kb_sections_updated: [].
   let kbUpdated: string[] = [];
+  let kbFailed: Array<{ section_id: string; reason: string }> = [];
   try {
-    kbUpdated = await propagateToKB(event_id, changedFieldKeys, newValuesFlat);
+    const kbResult = await propagateToKB(event_id, changedFieldKeys, newValuesFlat);
+    kbUpdated = kbResult.updated;
+    kbFailed = kbResult.failed;
   } catch (kbErr) {
     console.error('[confirm] propagateToKB threw — KB update skipped:', kbErr);
+    kbFailed = [
+      { section_id: '*', reason: kbErr instanceof Error ? kbErr.message : String(kbErr) },
+    ];
   }
 
   // recordChangeEvent uses createAdminClient() internally — RLS is bypassed.
@@ -283,6 +291,25 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   // ── 9. Return ─────────────────────────────────────────────────────────────
+  // The event WAS synced and the change WAS audited above. But if KB
+  // propagation failed for any section, surface it as an error rather than a
+  // clean success — a stale KB will answer customers with the old value.
+  if (kbFailed.length > 0) {
+    return NextResponse.json(
+      {
+        success: false,
+        change_event_id: changeEventId,
+        kb_sections_updated: kbUpdated,
+        kb_propagation_failed: kbFailed,
+        dato: datoResult,
+        error: `Event synced, but KB propagation failed for ${kbFailed.length} section(s): ${kbFailed
+          .map((f) => f.section_id)
+          .join(', ')}. The KB may be stale — retry, or edit those sections manually.`,
+      },
+      { status: 500 },
+    );
+  }
+
   return NextResponse.json({
     success: true,
     change_event_id: changeEventId,

@@ -94,19 +94,35 @@ export async function recordChangeEvent(params: RecordChangeEventParams): Promis
   return data.id as string;
 }
 
+export interface PropagateToKBResult {
+  /** section_ids whose answer_en was successfully updated. */
+  updated: string[];
+  /**
+   * Sections that were found but whose update failed (DB error or zero rows
+   * affected). A section that simply does not exist is NOT a failure — it is a
+   * legitimate skip (the operator must create it first).
+   */
+  failed: Array<{ section_id: string; reason: string }>;
+}
+
 /**
  * Updates kb_sections rows for fields that have KB implications.
  *
- * Only updates existing rows — does not create new sections.
- * Returns the array of section_id strings that were updated.
+ * Only updates existing rows — does not create new sections. A missing section
+ * is skipped silently; a section that exists but whose write fails is reported
+ * in `failed` so callers can surface it instead of reporting a false success
+ * (audit 1.2 — the previous version selected/updated non-existent `version` and
+ * `updated_at` columns, so every update errored 42703 and was silently
+ * swallowed, making KB propagation a total no-op).
  */
 export async function propagateToKB(
   event_id: string,
   changedFields: string[],
   newValues: Record<string, unknown>,
-): Promise<string[]> {
+): Promise<PropagateToKBResult> {
   const admin = createAdminClient();
-  const updatedSections: string[] = [];
+  const updated: string[] = [];
+  const failed: Array<{ section_id: string; reason: string }> = [];
 
   // Collect the unique section_ids that need updating.
   const sectionIds = new Set<string>();
@@ -121,16 +137,27 @@ export async function propagateToKB(
   }
 
   for (const sectionId of Array.from(sectionIds)) {
-    // Fetch existing row — skip if it doesn't exist.
+    // Fetch existing row. maybeSingle() distinguishes "section absent" (data
+    // null, no error → legit skip) from a real DB error (surface it).
     const { data: existing, error: fetchError } = await admin
       .from('kb_sections')
-      .select('id, answer_en, version')
+      .select('id, answer_en')
       .eq('event_id', event_id)
       .eq('section_id', sectionId)
-      .single();
+      .maybeSingle();
 
-    if (fetchError || !existing) {
-      // Section does not exist — operator must create it first.
+    if (fetchError) {
+      console.error('[propagateToKB] fetch failed', {
+        event_id,
+        section_id: sectionId,
+        error: fetchError.message,
+      });
+      failed.push({ section_id: sectionId, reason: `fetch failed: ${fetchError.message}` });
+      continue;
+    }
+
+    if (!existing) {
+      // Section does not exist — operator must create it first. Legit skip.
       continue;
     }
 
@@ -158,21 +185,36 @@ export async function propagateToKB(
     const updateDate = new Date().toLocaleDateString('en-GB');
     const updateLine = `[Updated ${updateDate}] ${sentences.join('; ')}`;
     const newAnswer = `${baseAnswer}\n\n${updateLine}`;
-    const newVersion = (typeof existing.version === 'number' ? existing.version : 0) + 1;
 
-    const { error: updateError } = await admin
+    // Zero-rows guard: .select() the affected row so a silent no-op surfaces as
+    // a failure instead of a false success (CLAUDE.md pattern).
+    const { data: updatedRows, error: updateError } = await admin
       .from('kb_sections')
-      .update({
-        answer_en: newAnswer,
-        version: newVersion,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', existing.id);
+      .update({ answer_en: newAnswer })
+      .eq('id', existing.id)
+      .select('id');
 
-    if (!updateError) {
-      updatedSections.push(sectionId);
+    if (updateError) {
+      console.error('[propagateToKB] update failed', {
+        event_id,
+        section_id: sectionId,
+        error: updateError.message,
+      });
+      failed.push({ section_id: sectionId, reason: `update failed: ${updateError.message}` });
+      continue;
     }
+
+    if (!updatedRows || updatedRows.length === 0) {
+      console.error('[propagateToKB] update affected zero rows', {
+        event_id,
+        section_id: sectionId,
+      });
+      failed.push({ section_id: sectionId, reason: 'update affected zero rows' });
+      continue;
+    }
+
+    updated.push(sectionId);
   }
 
-  return updatedSections;
+  return { updated, failed };
 }

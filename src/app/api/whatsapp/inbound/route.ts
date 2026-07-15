@@ -36,6 +36,7 @@ import {
   resolveEventForOperator,
 } from '@/lib/agent/whatsapp-router';
 import { getOrCreateWhatsAppConversation } from '@/lib/agent/whatsapp-conversation';
+import { markMessageProcessed } from '@/lib/whatsapp/message-dedup';
 import {
   getPendingEventSelection,
   setPendingEventSelection,
@@ -458,6 +459,20 @@ async function handleInboundMessage(
   phoneNumberId: string,
 ): Promise<void> {
   const admin = createAdminClient();
+
+  // ── Idempotency: drop Meta webhook redeliveries ───────────────────────────
+  // Meta delivers webhooks at-least-once. An insert-first dedup on the wamid
+  // prevents double classifier/generator spend, duplicate `messages` rows, and
+  // double replies to the customer. Covers every message type (text, button,
+  // unsupported). Race-safe via the unique PRIMARY KEY (see message-dedup.ts).
+  const dedup = await markMessageProcessed(message.wamid);
+  if (dedup === 'duplicate') {
+    console.log('[inbound] duplicate message dropped', {
+      wamid: message.wamid,
+      type: message.type,
+    });
+    return;
+  }
 
   // ── Text messages ─────────────────────────────────────────────────────────
   if (message.type === 'text') {

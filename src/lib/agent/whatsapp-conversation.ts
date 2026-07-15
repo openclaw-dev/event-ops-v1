@@ -99,19 +99,24 @@ export async function getOrCreateWhatsAppConversation(params: {
       consecutive_no_progress_turns: number;
     };
 
-    // Fetch last 10 messages for history
+    // Fetch the last 10 messages. Order descending + limit to take the most
+    // RECENT 10 (ascending + limit would freeze context on the opening turns
+    // once a thread passes 10 messages — audit 5.1), then reverse so the model
+    // receives them oldest-first.
     const { data: msgs } = await admin
       .from('messages')
       .select('role, text, created_at')
       .eq('conversation_id', row.id)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
       .limit(10);
 
-    const history: MessageHistoryItem[] = (msgs ?? []).map((m) => ({
-      role: coerceRole((m as Record<string, unknown>).role),
-      text: String((m as Record<string, unknown>).text ?? ''),
-      created_at: String((m as Record<string, unknown>).created_at ?? ''),
-    }));
+    const history: MessageHistoryItem[] = (msgs ?? [])
+      .map((m) => ({
+        role: coerceRole((m as Record<string, unknown>).role),
+        text: String((m as Record<string, unknown>).text ?? ''),
+        created_at: String((m as Record<string, unknown>).created_at ?? ''),
+      }))
+      .reverse(); // chronological (oldest-first) for the model
 
     return {
       conversation_id: row.id,
