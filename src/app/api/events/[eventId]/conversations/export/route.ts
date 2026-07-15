@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { createServerClient } from '@/lib/supabase/server';
+import { startOfLocalDayUTC, DEFAULT_EVENT_TZ } from '@/lib/dates';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -19,11 +20,11 @@ const STATE_TO_INTENT: Record<string, string> = {
 
 import { INTENT_TO_STATES } from '@/lib/agent/intent-labels';
 
-function getRangeSince(range: string): string | null {
+// "today" is anchored to midnight in the event's timezone, not the server's UTC
+// midnight (audit 4.9); "7d" is a rolling instant and is timezone-independent.
+function getRangeSince(range: string, timeZone: string): string | null {
   if (range === 'today') {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d.toISOString();
+    return startOfLocalDayUTC(new Date(), timeZone).toISOString();
   }
   if (range === '7d') {
     const d = new Date();
@@ -73,7 +74,7 @@ export async function GET(
   // Verify access to this event via RLS.
   const { data: event } = await supabase
     .from('events')
-    .select('id, name')
+    .select('id, name, timezone')
     .eq('id', params.eventId)
     .is('deleted_at', null)
     .single();
@@ -82,13 +83,15 @@ export async function GET(
     return NextResponse.json({ error: 'Event not found or access denied.' }, { status: 404 });
   }
 
+  const eventTz = (event as { timezone?: string | null }).timezone ?? DEFAULT_EVENT_TZ;
+
   // ── 2. Parse filters from URL ─────────────────────────────────────────────
   const url        = new URL(request.url);
   const query      = (url.searchParams.get('q') ?? '').trim();
   const intent     = url.searchParams.get('intent') ?? '';
   const language   = url.searchParams.get('language') ?? '';
   const range      = url.searchParams.get('range') ?? '';
-  const since      = getRangeSince(range);
+  const since      = getRangeSince(range, eventTz);
 
   // ── 3. Resolve search → conversation IDs ─────────────────────────────────
   let searchConvoIds: string[] | null = null;

@@ -125,7 +125,7 @@ export async function POST(request: Request) {
 
   const { data: event, error: eventError } = await supabase
     .from('events')
-    .select('id, operator_id, config, timezone')
+    .select('id, operator_id, config, timezone, end_date')
     .eq('id', eventId)
     .is('deleted_at', null)
     .single();
@@ -137,6 +137,9 @@ export async function POST(request: Request) {
   const eventConfig: EventConfig = {
     ...(event.config as EventConfig),
     timezone: event.timezone as string | undefined,
+    // Inject top-level end_date so the generator's "ended" branch is correct
+    // for multi-day events (audit 4.7).
+    event_end_date_iso: (event.end_date as string | null) ?? undefined,
   };
 
   // ── 3. Resolve or create the conversation ────────────────────────────────

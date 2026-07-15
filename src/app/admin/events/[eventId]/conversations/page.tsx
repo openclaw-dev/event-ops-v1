@@ -7,6 +7,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { getConversationMetrics } from '@/lib/agent/conversation-metrics';
+import { startOfLocalDayUTC, DEFAULT_EVENT_TZ } from '@/lib/dates';
 import type { EventConfig } from '@/lib/types';
 
 import { ConversationsFilters } from './_components/conversations-filters';
@@ -37,12 +38,16 @@ const STATE_COLORS: Record<string, string> = {
 
 import { INTENT_TO_STATES } from '@/lib/agent/intent-labels';
 
-/** Returns the ISO timestamp corresponding to the start of the chosen range. */
-function getRangeSince(range: string): string | null {
+/**
+ * Returns the ISO timestamp corresponding to the start of the chosen range.
+ * "today" is anchored to midnight in the event's timezone, not the server's UTC
+ * midnight — otherwise a Riyadh operator's Today view omits 00:00–03:00 local
+ * conversations (audit 4.9). "7d" is a rolling now-minus-7-days instant, which
+ * is timezone-independent and left as-is.
+ */
+function getRangeSince(range: string, timeZone: string): string | null {
   if (range === 'today') {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d.toISOString();
+    return startOfLocalDayUTC(new Date(), timeZone).toISOString();
   }
   if (range === '7d') {
     const d = new Date();
@@ -88,11 +93,13 @@ export default async function ConversationsPage({
 
   const { data: event } = await supabase
     .from('events')
-    .select('id, name, config')
+    .select('id, name, config, timezone')
     .eq('id', params.eventId)
     .is('deleted_at', null)
     .single();
   if (!event) notFound();
+
+  const eventTz = (event as { timezone?: string | null }).timezone ?? DEFAULT_EVENT_TZ;
 
   const page = Math.max(1, parseInt(searchParams.page ?? '1', 10) || 1);
   const stateFilter  = searchParams.state ?? '';
@@ -101,7 +108,7 @@ export default async function ConversationsPage({
   const rangeFilter  = searchParams.range ?? '';
   const query        = (searchParams.q ?? '').trim();
 
-  const since = getRangeSince(rangeFilter);
+  const since = getRangeSince(rangeFilter, eventTz);
 
   // Fetch metrics (uses same since value so the bar stays in sync with range).
   const metricsPromise = getConversationMetrics(params.eventId, since ? { since } : undefined);

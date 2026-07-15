@@ -31,6 +31,13 @@ export interface EventConfig {
   event_id: string;
   event_name: string;
   event_date_iso: string;
+  /**
+   * Event END date (YYYY-MM-DD). Distinct from event_date_iso (the START date)
+   * so a multi-day event is not reported "ended" on day 2+. Top-level
+   * events.end_date injected at runtime like timezone; optional because
+   * configs persisted before this field existed will not carry it.
+   */
+  event_end_date_iso?: string;
   /** IANA timezone string, e.g. 'Asia/Dubai'. Top-level events.timezone injected at runtime. */
   timezone?: string;
   refund_policy: RefundPolicy;

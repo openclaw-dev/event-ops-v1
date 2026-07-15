@@ -41,10 +41,16 @@ export async function GET(req: NextRequest) {
     const admin = createAdminClient();
 
     // ── Time window ────────────────────────────────────────────────────────
+    // Snap the metrics window AND the printed label to the SAME whole-UTC-day
+    // bounds so they can never disagree (audit 4.8). Both are derived from
+    // startDay/todayUTC — the window is [startDay, now] and the label spans
+    // [startDay .. todayUTC], so today's partial data is in-window and in-label.
+    // UTC whole-days are acceptable here (internal digest, not customer-facing).
     const now = new Date();
-    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const since = weekAgo.toISOString();
-    const period = formatPeriod(weekAgo, new Date(now.getTime() - 24 * 60 * 60 * 1000));
+    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const startDay = new Date(todayUTC.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const since = startDay.toISOString();
+    const period = formatPeriod(startDay, todayUTC);
 
     // ── Fetch all operators ────────────────────────────────────────────────
     // Distinguish a DB failure from a genuinely quiet week (audit 6.11): a

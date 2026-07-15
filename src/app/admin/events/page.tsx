@@ -3,10 +3,22 @@ import { Plus, Calendar } from 'lucide-react';
 
 import { createServerClient } from '@/lib/supabase/server';
 import { resolveActiveOperatorId } from '@/lib/get-active-operator';
+import { localDateStringInTz, DEFAULT_EVENT_TZ } from '@/lib/dates';
 import { Button } from '@/components/ui/button';
 
-function EventStatusBadge({ status, startDate }: { status: string; startDate: string }) {
-  const today = new Date().toISOString().slice(0, 10);
+function EventStatusBadge({
+  status,
+  startDate,
+  timezone,
+}: {
+  status: string;
+  startDate: string;
+  timezone: string | null;
+}) {
+  // Compare against "today" in the event's timezone, not the server's UTC date:
+  // between 21:00 UTC and midnight a Saudi-evening event flips a day early/late
+  // under a UTC comparison (audit 10.5).
+  const today = localDateStringInTz(new Date(), timezone ?? DEFAULT_EVENT_TZ);
   const isPast = startDate < today;
 
   if (status === 'live') {
@@ -52,7 +64,7 @@ export default async function EventsPage() {
   const { data: events } = activeOperatorId
     ? await supabase
         .from('events')
-        .select('id, name, status, event_type, start_date, venue_city')
+        .select('id, name, status, event_type, start_date, venue_city, timezone')
         .eq('operator_id', activeOperatorId)
         .is('deleted_at', null)
         .order('start_date', { ascending: true })
@@ -98,7 +110,11 @@ export default async function EventsPage() {
                   {event.event_type} · {event.venue_city} · {event.start_date}
                 </p>
               </div>
-              <EventStatusBadge status={event.status} startDate={event.start_date} />
+              <EventStatusBadge
+                status={event.status}
+                startDate={event.start_date}
+                timezone={(event as { timezone?: string | null }).timezone ?? null}
+              />
             </Link>
           ))}
         </div>

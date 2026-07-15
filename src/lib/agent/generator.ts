@@ -14,6 +14,7 @@
 
 import { claude } from './anthropic-client';
 import type { EventConfig } from '@/lib/types';
+import { localDateStringInTz, dayDiff } from '@/lib/dates';
 
 import type {
   GenerationOutput,
@@ -108,7 +109,7 @@ function buildEventTimingContext(eventConfig: EventConfig): string {
   const now = new Date();
 
   // Current date in event timezone — en-CA locale produces YYYY-MM-DD.
-  const localDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
+  const localDateStr = localDateStringInTz(now, tz);
 
   // Human-readable time + timezone abbreviation for the system prompt.
   const localTimeDisplay = new Intl.DateTimeFormat('en-US', {
@@ -130,19 +131,22 @@ function buildEventTimingContext(eventConfig: EventConfig): string {
   const nowMin = parseInt(timeParts.find((p) => p.type === 'minute')?.value ?? '0', 10);
   const nowTotalMins = nowHour * 60 + nowMin;
 
-  // Days difference (positive = event is in the future).
-  const parseYMD = (s: string): number =>
-    Date.UTC(parseInt(s.slice(0, 4), 10), parseInt(s.slice(5, 7), 10) - 1, parseInt(s.slice(8, 10), 10));
-  const diffDays = Math.round(
-    (parseYMD(eventConfig.event_date_iso) - parseYMD(localDateStr)) / 86_400_000,
-  );
+  // Whole-day differences in the event timezone (positive = in the future).
+  // startDiff drives the today/tomorrow/future branches; endDiff drives the
+  // "ended" branch so a multi-day event is not called ended on day 2+ (audit 4.7).
+  const endDateIso = eventConfig.event_end_date_iso ?? eventConfig.event_date_iso;
+  const startDiff = dayDiff(eventConfig.event_date_iso, localDateStr);
+  const endDiff = dayDiff(endDateIso, localDateStr);
+  const diffDays = startDiff;
 
   let statusLine: string;
 
-  if (diffDays < 0) {
-    const daysAgo = Math.abs(diffDays);
+  if (endDiff < 0) {
+    const daysAgo = Math.abs(endDiff);
     statusLine = `Event ended ${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago`;
-  } else if (diffDays === 0) {
+  } else if (startDiff <= 0) {
+    // Event has started (single-day today, or an ongoing multi-day event) and
+    // has not yet ended → treat as today / live.
     const [dHourStr, dMinStr] = (eventConfig.doors_open_local ?? '').split(':');
     const dHour = parseInt(dHourStr ?? '', 10);
     const dMin = parseInt(dMinStr ?? '', 10);

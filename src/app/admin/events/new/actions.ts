@@ -47,6 +47,7 @@ export async function createEvent(
     event_id: '',          // filled in after insert
     event_name: data.name,
     event_date_iso: data.start_date,
+    event_end_date_iso: data.end_date,
     refund_policy: {
       shape: data.refund_policy.shape,
       tiers: data.refund_policy.tiers,

@@ -9,6 +9,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { localDateStringInTz, DEFAULT_EVENT_TZ } from '@/lib/dates';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -80,10 +81,16 @@ export async function resolveEventForOperator(
   const admin = createAdminClient();
 
   const now = new Date();
-  // Lower bound: 48h ago (events that ended earlier than this are too stale).
-  const recentCutoff = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString().split('T')[0];
-  // Upper bound: today's date (draft events with a FUTURE end_date are not yet ended).
-  const today = now.toISOString().split('T')[0];
+  // Compute the date-string bounds in the operator/customer timezone, not UTC:
+  // from 21:00 UTC to midnight (00:00–03:00 in Saudi) a UTC calendar date is a
+  // day behind local, which silently dropped recently-ended events from routing
+  // every night (audit 4.5). No single event exists at this operator-level step,
+  // so fall back to the market default timezone. Query bounds/logic unchanged.
+  const recentCutoff = localDateStringInTz(
+    new Date(now.getTime() - 48 * 60 * 60 * 1000),
+    DEFAULT_EVENT_TZ,
+  );
+  const today = localDateStringInTz(now, DEFAULT_EVENT_TZ);
 
   const { data, error } = await admin
     .from('events')

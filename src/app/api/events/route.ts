@@ -102,6 +102,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     event_id: '',           // patched after insert
     event_name: trimmedName,
     event_date_iso: startDate,
+    event_end_date_iso: endDate,
     refund_policy: {
       shape: 'strict',
       tiers: [{ days_before_event: 0, refund_pct: 0 }],

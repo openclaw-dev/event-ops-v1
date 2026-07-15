@@ -25,6 +25,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { EventConfig } from '@/lib/types';
 import { trackUsage } from '@/lib/billing/track-usage';
+import { localDateStringInTz, dayDiff, DEFAULT_EVENT_TZ } from '@/lib/dates';
 
 import { classifyMessage } from './classifier';
 import { generateCitedReply } from './generator';
@@ -236,13 +237,18 @@ function escalateResult(
 }
 
 /**
- * Compute days until the event from now.
+ * Compute whole calendar days until the event, measured in the event's
+ * timezone. Negative when the event is in the past.
  *
- * Negative when the event is in the past.
+ * Refund tiers are quoted from this value, so it must use the same tz-aware
+ * local-date diff as generator.ts's timing context rather than UTC-midnight
+ * parsing — otherwise, between 21:00 UTC and midnight, a customer near a tier
+ * boundary is quoted the wrong refund percentage (audit 4.6).
  */
 function daysUntilEvent(eventConfig: EventConfig): number {
-  const target = new Date(eventConfig.event_date_iso).getTime();
-  return Math.ceil((target - Date.now()) / (1000 * 60 * 60 * 24));
+  const tz = eventConfig.timezone ?? DEFAULT_EVENT_TZ;
+  const todayLocal = localDateStringInTz(new Date(), tz);
+  return dayDiff(eventConfig.event_date_iso, todayLocal);
 }
 
 /**

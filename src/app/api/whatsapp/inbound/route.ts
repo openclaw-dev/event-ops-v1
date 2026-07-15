@@ -289,7 +289,7 @@ async function handleCustomerSupportMessage(
   // Step 5: Fetch event config (needed by the state machine).
   const { data: eventRow } = await admin
     .from('events')
-    .select('config, operator_id, timezone')
+    .select('config, operator_id, timezone, end_date')
     .eq('id', resolvedEventId)
     .single();
 
@@ -301,6 +301,10 @@ async function handleCustomerSupportMessage(
   const eventConfig: EventConfig = {
     ...(rawEventRow.config as EventConfig),
     timezone: rawEventRow.timezone as string | undefined,
+    // Inject the top-level end_date (authoritative for existing events whose
+    // persisted config predates event_end_date_iso) so the generator's "ended"
+    // branch is correct for multi-day events (audit 4.7).
+    event_end_date_iso: (rawEventRow.end_date as string | null) ?? undefined,
     event_recently_ended: eventRecentlyEnded,
   };
 
