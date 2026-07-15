@@ -7,7 +7,9 @@ import type { WhatsAppAdapter } from './types'
  * The inbound webhook route imports only this factory — never a concrete adapter.
  */
 export function createWhatsAppAdapter(): WhatsAppAdapter {
-  const provider = process.env.WHATSAPP_PROVIDER
+  // Trim + lowercase so a trailing newline or stray casing in WHATSAPP_PROVIDER
+  // cannot silently defeat the exact-match (the documented "meta\n" !== "meta" bug).
+  const provider = process.env.WHATSAPP_PROVIDER?.trim().toLowerCase()
 
   if (provider === 'meta') {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -23,6 +25,6 @@ export function createWhatsAppAdapter(): WhatsAppAdapter {
 
   throw new Error(
     `WHATSAPP_PROVIDER is "${provider ?? 'unset'}". ` +
-    `Set it to "meta" or "360dialog" in your environment variables.`
+    `Set it to exactly "meta" or "360dialog" in your environment variables.`
   )
 }

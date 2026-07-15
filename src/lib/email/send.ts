@@ -6,6 +6,8 @@
  * Pure function — no Supabase, no Anthropic.
  */
 
+import { optionalEnv } from '@/lib/env';
+
 const FROM_EMAIL = 'noreply@tazkar.co';
 const FROM_NAME = 'Tazkar';
 
@@ -16,8 +18,11 @@ export async function sendEmail(params: {
 }): Promise<{ success: boolean; error?: string }> {
   const { to, subject, html } = params;
 
-  const resendKey = process.env.RESEND_API_KEY;
-  const sendgridKey = process.env.SENDGRID_API_KEY;
+  // optionalEnv trims and collapses whitespace-only values to undefined, so a
+  // blank/newline-only key never selects a provider that would then always fail
+  // (audit 2.5); provider selection falls through correctly.
+  const resendKey = optionalEnv('RESEND_API_KEY');
+  const sendgridKey = optionalEnv('SENDGRID_API_KEY');
 
   // ── Resend ──────────────────────────────────────────────────────────────────
   if (resendKey) {

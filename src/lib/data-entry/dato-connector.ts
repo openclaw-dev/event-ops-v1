@@ -7,6 +7,7 @@
  */
 
 import type { EventSetupFormData } from '@/lib/schemas';
+import { optionalEnv } from '@/lib/env';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,8 +32,10 @@ export async function pushEventToDato(
   _eventId: string,
   data: Partial<EventSetupFormData>,
 ): Promise<DatoSyncResult> {
-  const token = process.env.DATOCMS_API_TOKEN;
-  const modelId = process.env.DATOCMS_EVENT_MODEL_ID;
+  // Trim on read so a trailing newline cannot corrupt the Authorization header
+  // (token) or the item-type id in the request body (modelId) — audit 2.6.
+  const token = optionalEnv('DATOCMS_API_TOKEN');
+  const modelId = optionalEnv('DATOCMS_EVENT_MODEL_ID');
 
   if (!token || !modelId) {
     return {

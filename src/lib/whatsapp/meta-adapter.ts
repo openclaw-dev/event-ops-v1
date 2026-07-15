@@ -19,14 +19,9 @@ import type {
   SendResult,
 } from './types';
 import { parseMetaCompatibleBody } from './parse-meta-compatible';
+import { requireEnv } from '@/lib/env';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function requireEnv(name: string): string {
-  const val = process.env[name];
-  if (!val) throw new Error(`MetaAdapter: missing required env var ${name}`);
-  return val;
-}
 
 function metaMessagesUrl(phoneNumberId: string): string {
   return `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`;

@@ -38,6 +38,7 @@ import {
 import { getOrCreateWhatsAppConversation } from '@/lib/agent/whatsapp-conversation';
 import { markMessageProcessed } from '@/lib/whatsapp/message-dedup';
 import { writeAuditLog } from '@/lib/audit/write-audit-log';
+import { optionalEnv } from '@/lib/env';
 import {
   getPendingEventSelection,
   setPendingEventSelection,
@@ -55,9 +56,13 @@ export async function GET(req: Request): Promise<Response> {
   const verifyToken = url.searchParams.get('hub.verify_token');
   const challenge = url.searchParams.get('hub.challenge');
 
+  // Trim the configured token so a trailing newline in META_WEBHOOK_VERIFY_TOKEN
+  // cannot 403 the verification handshake forever (audit 2.3).
+  const expectedToken = optionalEnv('META_WEBHOOK_VERIFY_TOKEN');
   if (
     mode === 'subscribe' &&
-    verifyToken === process.env.META_WEBHOOK_VERIFY_TOKEN
+    expectedToken !== undefined &&
+    verifyToken === expectedToken
   ) {
     return new Response(challenge ?? '', { status: 200 });
   }
