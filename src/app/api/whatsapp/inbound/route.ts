@@ -37,6 +37,7 @@ import {
 } from '@/lib/agent/whatsapp-router';
 import { getOrCreateWhatsAppConversation } from '@/lib/agent/whatsapp-conversation';
 import { markMessageProcessed } from '@/lib/whatsapp/message-dedup';
+import { preRouteInbound } from '@/lib/whatsapp/inbound-pre-router';
 import { writeAuditLog } from '@/lib/audit/write-audit-log';
 import { optionalEnv } from '@/lib/env';
 import {
@@ -147,14 +148,32 @@ function parseEventSelection(
   };
   if (emojiMap[trimmed] !== undefined) return emojiMap[trimmed]!;
 
-  // Fuzzy name match
+  // Fuzzy name match — must be a FULL-name match or a high-similarity, single
+  // unambiguous match. We must NEVER select on one leading token (the previous
+  // `lowerText.includes(name.split(' ')[0])` did exactly that, so a follow-up
+  // like "what's the difference between them?" containing a common first word
+  // silently picked an event and answered the persisted question against it —
+  // audit 5.4). The numbered-reply paths above are unchanged.
   const lowerText = trimmed.toLowerCase();
-  const nameMatch = events.findIndex(
-    (e) =>
-      e.name.toLowerCase().includes(lowerText) ||
-      lowerText.includes(e.name.toLowerCase().split(' ')[0]!.toLowerCase()),
-  );
-  if (nameMatch !== -1) return nameMatch;
+
+  // 1. Exact name match wins outright.
+  const exactIdx = events.findIndex((e) => e.name.toLowerCase() === lowerText);
+  if (exactIdx !== -1) return exactIdx;
+
+  // 2. Strong containment: either the reply contains the FULL event name, or the
+  //    event name contains the reply AND the reply is specific enough (>= 60% of
+  //    the name and >= 4 chars) to be a deliberate choice rather than a shared
+  //    token. Only accept if exactly ONE event matches (no ambiguity).
+  const matches: number[] = [];
+  events.forEach((e, i) => {
+    const name = e.name.toLowerCase();
+    const replyContainsName = lowerText.includes(name);
+    const nameContainsReply =
+      name.includes(lowerText) &&
+      lowerText.length >= Math.max(4, Math.floor(name.length * 0.6));
+    if (replyContainsName || nameContainsReply) matches.push(i);
+  });
+  if (matches.length === 1) return matches[0]!;
 
   return null;
 }
@@ -199,6 +218,24 @@ async function handleCustomerSupportMessage(
     }
   }
 
+  // Step 1.5: Inbound pre-router — STOP/opt-out + recovery/CRM reply context.
+  // Runs before ANY AI classification/generation (audit 5.3): STOP must never
+  // be answered by the agent (compliance), and a recovery-completion reply must
+  // transition the attempt rather than dropping into the generic agent. If it
+  // fully handles the message we owe no further reply.
+  const preRoute = await preRouteInbound({
+    adapter,
+    operatorId: operator.operator_id,
+    phone,
+    text: message.text,
+  });
+  if (preRoute.handled) {
+    console.log('[inbound] pre-router handled message — not passing to AI', {
+      branch: preRoute.branch,
+    });
+    return;
+  }
+
   // Step 2: Check for a pending event selection from a previous turn.
   // effectiveMessageText starts as the current message but is overridden with
   // the customer's ORIGINAL question when we resolve a multi-event selection.
@@ -223,16 +260,37 @@ async function handleCustomerSupportMessage(
         console.log('[inbound] re-processing original message after event selection', { original_message: effectiveMessageText });
       }
     } else {
-      // Invalid selection — re-send the prompt.
-      const reSendResult = await adapter.sendText({
-        to_phone_e164: phone,
-        text: buildEventSelectionPrompt(pendingSelection.events),
-      });
-      console.log('[inbound] re-sent selection prompt (invalid choice)', {
-        success: reSendResult.success,
-        error: reSendResult.error ?? null,
-      });
-      return;
+      // Parse failed. The message is almost always a NEW question rather than a
+      // valid selection, and previously it was neither answered nor stored —
+      // only the list was re-sent — so the new question was permanently lost
+      // (audit 5.5). Persist it as the current original_message (refreshing the
+      // TTL) so that when the customer finally picks an event we re-inject THIS
+      // question, not the stale one.
+      const stored = await setPendingEventSelection(
+        phone,
+        pendingSelection.events,
+        message.text,
+      );
+      if (!stored) {
+        // Same failure mode as the multi-event branch (audit 5.6): if we cannot
+        // persist state, do not keep the customer in a broken selection loop.
+        // Degrade to a single-turn answer against the first offered event.
+        console.error('[inbound] session-state update failed on invalid selection — degrading to single-turn answer', {
+          phone,
+        });
+        resolvedEventId = pendingSelection.events[0]!.id;
+        // effectiveMessageText stays as the current (new) message; fall through.
+      } else {
+        const reSendResult = await adapter.sendText({
+          to_phone_e164: phone,
+          text: buildEventSelectionPrompt(pendingSelection.events),
+        });
+        console.log('[inbound] updated original_message + re-sent selection prompt (invalid choice)', {
+          success: reSendResult.success,
+          error: reSendResult.error ?? null,
+        });
+        return;
+      }
     }
   }
 
@@ -259,20 +317,33 @@ async function handleCustomerSupportMessage(
     if (routeResult.type === 'multiple') {
       // Store the original question alongside the event list so it can be
       // re-injected on the next turn once the customer picks an event.
-      await setPendingEventSelection(phone, routeResult.events, message.text);
-      const selectionSendResult = await adapter.sendText({
-        to_phone_e164: phone,
-        text: buildEventSelectionPrompt(routeResult.events),
+      const stored = await setPendingEventSelection(phone, routeResult.events, message.text);
+      if (stored) {
+        const selectionSendResult = await adapter.sendText({
+          to_phone_e164: phone,
+          text: buildEventSelectionPrompt(routeResult.events),
+        });
+        console.log('[inbound] sent event-selection prompt', {
+          success: selectionSendResult.success,
+          error: selectionSendResult.error ?? null,
+        });
+        return;
+      }
+      // Session-state write failed. Sending the numbered prompt now would set up
+      // the exact migration-0029 bug via the failure path: the customer's "1"
+      // reply would arrive with no stored state and be persisted as
+      // original_message:"1". Skip the prompt and degrade to a single-turn
+      // answer against the first active event instead (audit 5.6).
+      console.error('[inbound] session-state write failed — skipping numbered prompt, degrading to single-turn answer', {
+        phone,
+        event_count: routeResult.events.length,
       });
-      console.log('[inbound] sent event-selection prompt', {
-        success: selectionSendResult.success,
-        error: selectionSendResult.error ?? null,
-      });
-      return;
+      resolvedEventId = routeResult.events[0]!.id;
+      // effectiveMessageText stays as the current message; fall through to Step 4.
+    } else {
+      resolvedEventId = routeResult.event_id;
+      eventRecentlyEnded = routeResult.recently_ended;
     }
-
-    resolvedEventId = routeResult.event_id;
-    eventRecentlyEnded = routeResult.recently_ended;
   }
 
   console.log('[inbound] resolved event_id:', resolvedEventId);
