@@ -6,6 +6,13 @@ import { createServerClient } from '@/lib/supabase/server';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+import { KbSectionEditor } from './_components/kb-section-editor';
+
+type KbLanguage = 'en' | 'ar' | 'ru' | 'all';
+
+function coerceKbLanguage(v: unknown): KbLanguage {
+  return v === 'ar' || v === 'ru' || v === 'all' ? v : 'en';
+}
 
 interface SectionDetailProps {
   params: { eventId: string; sectionId: string };
@@ -23,7 +30,7 @@ export default async function SectionDetailPage({ params }: SectionDetailProps) 
   const { data: section } = await supabase
     .from('kb_sections')
     .select(
-      'id, section_id, category, intent, escalation_needed, question_en, answer_en, question_ar, answer_ar, sort_order, created_at, kb_document_id',
+      'id, section_id, category, intent, escalation_needed, question_en, answer_en, question_ar, answer_ar, language, sort_order, created_at, kb_document_id',
     )
     .eq('id', params.sectionId)
     .eq('event_id', params.eventId)
@@ -52,16 +59,8 @@ export default async function SectionDetailPage({ params }: SectionDetailProps) 
       <div className="mb-6 space-y-2">
         <code className="text-base font-semibold">{section.section_id}</code>
         <div className="flex flex-wrap gap-2">
-          {section.category && (
-            <Badge variant="secondary">{section.category}</Badge>
-          )}
           {section.intent && (
             <Badge variant="outline">{section.intent}</Badge>
-          )}
-          {section.escalation_needed && (
-            <Badge className="border-amber-300 bg-amber-50 text-amber-700">
-              Escalation needed
-            </Badge>
           )}
         </div>
         {doc && (
@@ -79,46 +78,21 @@ export default async function SectionDetailPage({ params }: SectionDetailProps) 
 
       <Separator className="mb-6" />
 
-      {/* English Q&A */}
-      <section className="mb-8 space-y-4">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          English
-        </h2>
-        {section.question_en && (
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">Question</p>
-            <p className="text-sm">{section.question_en}</p>
-          </div>
-        )}
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground">Answer</p>
-          <p className="whitespace-pre-wrap text-sm leading-relaxed">{section.answer_en}</p>
-        </div>
-      </section>
-
-      {/* Arabic Q&A (shown only if content exists) */}
-      {(section.question_ar || section.answer_ar) && (
-        <>
-          <Separator className="mb-6" />
-          <section className="space-y-4" dir="rtl">
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              Arabic / العربية
-            </h2>
-            {section.question_ar && (
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">Question</p>
-                <p className="text-sm">{section.question_ar}</p>
-              </div>
-            )}
-            {section.answer_ar && (
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">Answer</p>
-                <p className="whitespace-pre-wrap text-sm leading-relaxed">{section.answer_ar}</p>
-              </div>
-            )}
-          </section>
-        </>
-      )}
+      {/* Edit form (Feature: KB section edit/delete — parked item 12) */}
+      <KbSectionEditor
+        eventId={params.eventId}
+        sectionId={section.id}
+        sectionKey={section.section_id}
+        initial={{
+          question_en: section.question_en ?? '',
+          answer_en: section.answer_en,
+          question_ar: section.question_ar ?? '',
+          answer_ar: section.answer_ar ?? '',
+          category: section.category ?? '',
+          language: coerceKbLanguage(section.language),
+          escalation_needed: section.escalation_needed,
+        }}
+      />
 
       {/* Metadata footer */}
       <Separator className="mt-8 mb-4" />

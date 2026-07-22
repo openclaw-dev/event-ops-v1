@@ -169,3 +169,32 @@ export const orderRowSchema = z.object({
 });
 
 export type OrderRowData = z.infer<typeof orderRowSchema>;
+
+// ─── KB section edit ────────────────────────────────────────────────────────
+
+/**
+ * Editable fields of a single kb_sections row (PATCH /api/kb/[sectionId]).
+ *
+ * `answer_en` is NOT NULL in the schema (migration 0004) so it is required and
+ * must be non-empty. The other text fields are nullable — an empty/whitespace
+ * submission is coerced to NULL so we never store empty strings. `intent`,
+ * `section_id`, `sort_order` and `kb_document_id` are intentionally NOT editable
+ * here. `language` values mirror the KB upload route (migration 0018).
+ */
+const kbNullableText = (max: number) =>
+  z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+    z.string().max(max).nullable(),
+  );
+
+export const kbSectionUpdateSchema = z.object({
+  question_en: kbNullableText(2000),
+  answer_en: z.string().min(1, 'English answer is required.').max(8000),
+  question_ar: kbNullableText(2000),
+  answer_ar: kbNullableText(8000),
+  category: kbNullableText(120),
+  language: z.enum(['en', 'ar', 'ru', 'all']),
+  escalation_needed: z.boolean(),
+});
+
+export type KbSectionUpdateData = z.infer<typeof kbSectionUpdateSchema>;

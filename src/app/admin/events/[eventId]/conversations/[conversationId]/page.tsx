@@ -14,6 +14,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { HumanReplyForm } from './_components/human-reply-form';
+import { CloseConversationButton } from './_components/close-conversation-button';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -150,6 +151,7 @@ export default async function ConversationDetailPage({
   const firstUserMsgId = messages.find((m) => m.role === 'user')?.id ?? null;
 
   const isEscalated = convo.state === 'escalation_triggered';
+  const isClosed = convo.state === 'session_closed';
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6 px-8 py-8">
@@ -195,6 +197,14 @@ export default async function ConversationDetailPage({
             )}
           </p>
         </div>
+
+        {/* Standalone close (parked item 11): resolve without messaging. */}
+        {!isClosed && (
+          <CloseConversationButton
+            eventId={params.eventId}
+            conversationId={params.conversationId}
+          />
+        )}
       </div>
 
       <Separator />
