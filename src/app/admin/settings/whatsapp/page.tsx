@@ -40,6 +40,9 @@ export default async function WhatsAppSettingsPage() {
       | string
       | null ?? '';
 
+  // No hardcoded URLs — use the configured site URL per convention (audit 8.3).
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://tazkar.co';
+
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8 px-8 py-8">
       {/* Token expiry reminder */}
@@ -69,7 +72,7 @@ export default async function WhatsAppSettingsPage() {
         <h3 className="text-sm font-semibold">Webhook URL</h3>
         <div className="rounded-md border bg-muted/40 px-4 py-3">
           <code className="text-xs break-all">
-            https://tazkar.co/api/whatsapp/inbound
+            {`${siteUrl}/api/whatsapp/inbound`}
           </code>
         </div>
         <p className="text-xs text-muted-foreground">

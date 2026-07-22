@@ -1,4 +1,7 @@
 export const runtime = 'nodejs';
+// Trivial static CSV generation — small ceiling, matching other lightweight
+// routes (audit 10.3).
+export const maxDuration = 10;
 
 /**
  * GET /api/orders/template

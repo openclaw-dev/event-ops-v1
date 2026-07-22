@@ -30,6 +30,23 @@ export async function POST(): Promise<Response> {
     return NextResponse.json({ status: 'error', message: 'Not authenticated.' }, { status: 401 });
   }
 
+  // ── Operator-membership check (audit 3.3) ─────────────────────────────────
+  // Auth alone let ANY authenticated user probe whether the Meta credentials are
+  // valid. Require membership in at least one operator, matching the ownership
+  // gate used by the other admin routes. (The token itself is deliberately read
+  // untrimmed below — this route exists to DETECT a trailing-newline token.)
+  const { data: memberships } = await supabase
+    .from('operator_users')
+    .select('operator_id')
+    .eq('user_id', user.id)
+    .limit(1);
+  if (!memberships || memberships.length === 0) {
+    return NextResponse.json(
+      { status: 'error', message: 'No operator membership.' },
+      { status: 403 },
+    );
+  }
+
   // ── Env var checks ────────────────────────────────────────────────────────
   const token = process.env.META_PERMANENT_TOKEN;
   const phoneNumberId = process.env.META_PHONE_NUMBER_ID;

@@ -5,7 +5,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { createServerClient } from '@/lib/supabase/server';
-import { resolveActiveOperatorId } from '@/lib/get-active-operator';
+import { rateLimit } from '@/lib/rate-limit';
+import { filterPhonesToOperatorOrders } from '@/lib/recipients';
 import {
   createRecoveryAttempt,
   sendRecoveryMessage,
@@ -59,10 +60,10 @@ export async function POST(req: NextRequest) {
 
   const { event_id, recovery_attempts } = parsed.data;
 
-  // Verify event ownership and fetch event name.
+  // Verify event ownership and fetch event name + operator.
   const { data: eventRow } = await supabase
     .from('events')
-    .select('id, name')
+    .select('id, name, operator_id')
     .eq('id', event_id)
     .is('deleted_at', null)
     .single();
@@ -74,22 +75,47 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const event_name = (eventRow as { id: string; name: string }).name;
+  const ev = eventRow as { id: string; name: string; operator_id: string };
+  const event_name = ev.name;
+  // Attribute recovery attempts to the VERIFIED event's operator, not the
+  // active-operator cookie — a user in two operators must never write rows under
+  // the wrong operator (audit 3.1). RLS already guarantees membership.
+  const operator_id = ev.operator_id;
 
-  // Resolve operator_id.
-  const { data: memberships } = await supabase
-    .from('operator_users')
-    .select('operator_id')
-    .eq('user_id', user.id);
-
-  const operator_id = resolveActiveOperatorId(
-    (memberships ?? []).map((m) => m.operator_id as string),
-  );
-
-  if (!operator_id) {
+  // Per-operator rate limit (audit 9.1b) — cap bulk-recovery bursts. In-memory,
+  // per serverless instance; see rate-limit.ts.
+  const rl = rateLimit(`recovery-bulk:${operator_id}`, 5, 60_000);
+  if (!rl.allowed) {
+    console.warn('[recovery/bulk] rate limit exceeded', {
+      operator_id,
+      retry_after_ms: rl.retryAfterMs,
+    });
     return NextResponse.json(
-      { error: 'No operator found. Complete onboarding first.' },
-      { status: 403 },
+      { error: 'Too many bulk-recovery requests. Please try again shortly.' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil(rl.retryAfterMs / 1000)) } },
+    );
+  }
+
+  // Recipient ownership check (audit 9.1a) — every recipient phone must belong to
+  // an order under one of this operator's events. Converts "authenticated user
+  // can bulk-message any phone on our WABA" into "can only message own customers".
+  const requestedPhones = recovery_attempts.map((a) => a.customer_phone_e164);
+  const validPhones = await filterPhonesToOperatorOrders(supabase, operator_id, requestedPhones);
+  const rejectedCount = recovery_attempts.filter(
+    (a) => !validPhones.has(a.customer_phone_e164),
+  ).length;
+  if (rejectedCount > 0) {
+    console.warn('[recovery/bulk] rejected recipients not matching operator orders', {
+      operator_id,
+      rejected_count: rejectedCount,
+      total: recovery_attempts.length,
+    });
+    return NextResponse.json(
+      {
+        error: `${rejectedCount} of ${recovery_attempts.length} recipient(s) are not customers of your events and were rejected. Recovery can only target phone numbers that appear on your orders.`,
+        rejected_count: rejectedCount,
+      },
+      { status: 422 },
     );
   }
 

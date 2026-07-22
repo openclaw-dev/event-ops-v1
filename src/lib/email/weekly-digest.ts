@@ -24,6 +24,9 @@ export interface WeeklyDigestParams {
 
 // ─── Shared style constants ───────────────────────────────────────────────────
 
+// No hardcoded URLs — use the configured site URL per convention (audit 8.3).
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://tazkar.co';
+
 const BASE =
   'margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;color:#111111;';
 const TH_STYLE =
@@ -134,7 +137,7 @@ export function buildWeeklyDigestHtml(params: WeeklyDigestParams): string {
             <td style="padding:16px 28px;background:#fafafa;">
               <p style="${BASE}font-size:11px;color:#aaaaaa;">
                 Powered by
-                <a href="https://tazkar.co"
+                <a href="${SITE_URL}"
                    style="color:#aaaaaa;text-decoration:underline;">tazkar.co</a>
                 &nbsp;·&nbsp;
                 You're receiving this because you operate an event on Tazkar.

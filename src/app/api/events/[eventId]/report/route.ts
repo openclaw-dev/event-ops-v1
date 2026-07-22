@@ -5,6 +5,9 @@ import { renderReport } from '@/lib/report/render-report';
 import { createServerClient } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
+// Heavy multi-query report build — allow the same ceiling as the other heavy
+// routes (recovery/bulk, crm) per convention (audit 10.3).
+export const maxDuration = 60;
 
 interface RouteParams {
   params: { eventId: string };

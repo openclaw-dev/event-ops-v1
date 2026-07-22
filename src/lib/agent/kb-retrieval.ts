@@ -239,13 +239,40 @@ export async function retrieveKB(
       rowToSection(row, matchedIntent ? 'intent_match' : 'fts_fallback'),
     );
 
+  if (scored.length > 0) return scored;
+
   // ── 5. Fallback: intent-only from event rows ──────────────────────────────
   // No keyword overlap at all → fall back to intent-only matches on event rows.
-  if (scored.length === 0 && opts.intent) {
+  if (opts.intent) {
     const intentRows = eventRows
       .filter((r) => r.intent === opts.intent)
       .slice(0, limit);
-    return intentRows.map((r) => rowToSection(r, 'intent_match'));
+    if (intentRows.length > 0) {
+      return intentRows.map((r) => rowToSection(r, 'intent_match'));
+    }
+  }
+
+  // ── 6. English-fallback scoring for Arabic / mixed queries (audit 10.2) ────
+  // An Arabic customer against an English-only KB scores zero on cross-language
+  // keyword overlap; with the intent fallback also empty this returns [] and
+  // triggers a needless empty-KB escalation. Re-score the SAME merged rows
+  // against the English haystack (language forced to 'en') so any English-token
+  // overlap in the message (brand names, "VIP", numbers, transliterations) is
+  // surfaced before giving up. scoreSection itself is untouched.
+  if (opts.language === 'ar' || opts.language === 'mixed') {
+    const englishScored = rows
+      .map((r) => ({ row: r, score: scoreSection(r, tokens, 'en') }))
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(({ row }) => rowToSection(row, 'fts_fallback'));
+    if (englishScored.length > 0) {
+      console.log('[kb-retrieval] English fallback used for non-English query', {
+        language: opts.language,
+        matches: englishScored.length,
+      });
+      return englishScored;
+    }
   }
 
   return scored;

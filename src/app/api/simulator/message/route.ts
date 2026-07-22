@@ -17,6 +17,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { writeAuditLog } from '@/lib/audit/write-audit-log';
 import type { EventConfig } from '@/lib/types';
 import { notifyEscalationContacts } from '@/lib/agent/escalation-notifier';
+import { rateLimit } from '@/lib/rate-limit';
 
 const MAX_MESSAGE_CHARS = 4000;
 
@@ -132,6 +133,21 @@ export async function POST(request: Request) {
 
   if (eventError || !event) {
     return NextResponse.json({ error: 'Event not found or access denied.' }, { status: 404 });
+  }
+
+  // Per-operator rate limit (audit 9.1b) — caps Anthropic spend from a single
+  // operator looping the simulator. In-memory, per serverless instance; see
+  // rate-limit.ts. Keyed by the verified event's operator.
+  const rl = rateLimit(`simulator:${event.operator_id as string}`, 30, 60_000);
+  if (!rl.allowed) {
+    console.warn('[simulator] rate limit exceeded', {
+      operator_id: event.operator_id,
+      retry_after_ms: rl.retryAfterMs,
+    });
+    return NextResponse.json(
+      { error: 'Too many simulator messages. Please slow down and try again shortly.' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil(rl.retryAfterMs / 1000)) } },
+    );
   }
 
   const eventConfig: EventConfig = {

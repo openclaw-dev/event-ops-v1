@@ -5,7 +5,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { createServerClient } from '@/lib/supabase/server';
-import { resolveActiveOperatorId } from '@/lib/get-active-operator';
 import { validateAndRecordScan } from '@/lib/gate/scan-validator';
 
 const scanSchema = z.object({
@@ -53,19 +52,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Event not found or access denied.' }, { status: 404 });
   }
 
+  // Attribute the scan to the VERIFIED event's operator, not the active-operator
+  // cookie — a user in two operators must never write gate_scans under the wrong
+  // one (audit 3.1). RLS already guarantees the user belongs to event.operator_id
+  // (the select above returned the row).
+  const operator_id = (event as { id: string; operator_id: string }).operator_id;
+
+  // Find the operator_user row id for attribution, scoped to THIS event's operator.
   const { data: memberships } = await supabase
     .from('operator_users')
     .select('operator_id, id')
     .eq('user_id', user.id);
 
-  const operator_id = resolveActiveOperatorId(
-    (memberships ?? []).map((m) => m.operator_id as string),
-  );
-  if (!operator_id) {
-    return NextResponse.json({ error: 'No operator found.' }, { status: 403 });
-  }
-
-  // Find the operator_user row id for attribution.
   const operatorUserRow = (memberships ?? []).find(
     (m) => (m.operator_id as string) === operator_id,
   );

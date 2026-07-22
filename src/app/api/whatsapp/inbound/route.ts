@@ -11,6 +11,8 @@
  *   2. Customer (unknown phone) → customer-support agent flow
  */
 
+import { timingSafeEqual } from 'node:crypto';
+
 import { createAdminClient } from '@/lib/supabase/admin';
 import { trackUsage } from '@/lib/billing/track-usage';
 import { createWhatsAppAdapter } from '@/lib/whatsapp/adapter-factory';
@@ -51,6 +53,14 @@ export const maxDuration = 30;
 
 // ─── GET — Meta webhook verification ─────────────────────────────────────────
 
+/** Constant-time string equality with a length guard (audit 7.1). */
+function constantTimeEquals(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
+
 export async function GET(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const mode = url.searchParams.get('hub.mode');
@@ -58,12 +68,15 @@ export async function GET(req: Request): Promise<Response> {
   const challenge = url.searchParams.get('hub.challenge');
 
   // Trim the configured token so a trailing newline in META_WEBHOOK_VERIFY_TOKEN
-  // cannot 403 the verification handshake forever (audit 2.3).
+  // cannot 403 the verification handshake forever (audit 2.3). Compare in
+  // constant time (buffers from the trimmed values), consistent with the POST
+  // signature path (audit 7.1).
   const expectedToken = optionalEnv('META_WEBHOOK_VERIFY_TOKEN');
   if (
     mode === 'subscribe' &&
     expectedToken !== undefined &&
-    verifyToken === expectedToken
+    verifyToken !== null &&
+    constantTimeEquals(verifyToken.trim(), expectedToken)
   ) {
     return new Response(challenge ?? '', { status: 200 });
   }
