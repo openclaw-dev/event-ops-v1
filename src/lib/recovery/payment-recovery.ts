@@ -82,7 +82,7 @@ export async function sendRecoveryMessage(params: {
   const { data: attempt } = await admin
     .from('payment_recovery_attempts')
     .select(
-      'customer_phone_e164, customer_name, ticket_type, quantity, amount_sar, payment_link',
+      'customer_phone_e164, customer_name, ticket_type, quantity, amount_sar, payment_link, event_id',
     )
     .eq('id', params.recovery_attempt_id)
     .single();
@@ -98,7 +98,29 @@ export async function sendRecoveryMessage(params: {
     quantity: number;
     amount_sar: number | string;
     payment_link: string | null;
+    event_id: string;
   };
+
+  // Demo guard (audit 8.2): never send a real WhatsApp message for a demo event.
+  const { data: eventRow, error: eventError } = await admin
+    .from('events')
+    .select('is_demo')
+    .eq('id', a.event_id)
+    .single();
+  if (eventError) {
+    console.error('[recovery/sendRecoveryMessage] demo-event check failed', {
+      recovery_attempt_id: params.recovery_attempt_id,
+      event_id: a.event_id,
+      error: eventError.message,
+    });
+  }
+  if ((eventRow as { is_demo: boolean } | null)?.is_demo) {
+    console.warn('[recovery/sendRecoveryMessage] demo event — WhatsApp send suppressed', {
+      recovery_attempt_id: params.recovery_attempt_id,
+      event_id: a.event_id,
+    });
+    return { success: false, error: 'Demo event — WhatsApp send suppressed.' };
+  }
 
   const greeting = params.customer_name ?? a.customer_name ?? 'there';
   const amount = toNumber(a.amount_sar);

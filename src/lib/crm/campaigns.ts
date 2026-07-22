@@ -135,7 +135,7 @@ export async function sendCampaign(
   // Fetch campaign details.
   const { data: campaignRow } = await admin
     .from('crm_campaigns')
-    .select('message_template, target_event_id, operator_id')
+    .select('message_template, target_event_id, event_id, operator_id')
     .eq('id', campaign_id)
     .single();
 
@@ -146,8 +146,35 @@ export async function sendCampaign(
   const campaign = campaignRow as {
     message_template: string;
     target_event_id: string | null;
+    event_id: string | null;
     operator_id: string;
   };
+
+  // Demo guard (audit 8.2): a demo event must never trigger a real WhatsApp
+  // send. Suppress the send if the campaign's owning event OR its target event
+  // is a demo event. Return before the draft→sending claim so the campaign is
+  // left untouched (still 'draft').
+  const demoCandidateIds = [campaign.event_id, campaign.target_event_id].filter(
+    (id): id is string => Boolean(id),
+  );
+  if (demoCandidateIds.length > 0) {
+    const { data: demoEvents, error: demoError } = await admin
+      .from('events')
+      .select('id, is_demo')
+      .in('id', demoCandidateIds);
+    if (demoError) {
+      console.error('[crm/sendCampaign] demo-event check failed', {
+        campaign_id,
+        error: demoError.message,
+      });
+    }
+    if ((demoEvents ?? []).some((e) => (e as { is_demo: boolean }).is_demo)) {
+      console.warn('[crm/sendCampaign] demo event — WhatsApp send suppressed', {
+        campaign_id,
+      });
+      return { sent: 0, failed: 0 };
+    }
+  }
 
   // Resolve target event name for {{event}} substitution.
   let targetEventName = '';
@@ -227,14 +254,27 @@ export async function sendCampaign(
     for (const r of recipients) {
       await markRecipient(r.id, { status: 'failed' });
     }
-    // NOTE: campaign-level status 'failed' is rejected by the 0027 CHECK
-    // (draft|sending|sent|paused|cancelled) — that is finding 1.3 (invalid
-    // enum), out of scope for this silent-failure sweep; left unchanged.
-    await admin
+    // Adapter unavailable before any message went out → total failure. Land on a
+    // CHECK-valid status: 'cancelled' (0027 allows draft|sending|sent|paused|
+    // cancelled). The granular outcome ('send_failed') is logged, not stored —
+    // crm_campaigns has no details/error column (audit 1.3). Writing the old
+    // 'failed' value was silently rejected, leaving the campaign stuck at
+    // 'sending' forever.
+    const { error: cancelErr } = await admin
       .from('crm_campaigns')
-      .update({ status: 'failed', sent_count: 0, updated_at: new Date().toISOString() })
+      .update({ status: 'cancelled', sent_count: 0, updated_at: new Date().toISOString() })
       .eq('id', campaign_id);
-    console.error('[crm/sendCampaign] adapter init failed:', errMsg);
+    if (cancelErr) {
+      console.error('[crm/sendCampaign] final status write failed (adapter init)', {
+        campaign_id,
+        error: cancelErr.message,
+      });
+    }
+    console.error('[crm/sendCampaign] adapter init failed — campaign cancelled', {
+      campaign_id,
+      granular_outcome: 'send_failed',
+      error: errMsg,
+    });
     return { sent: 0, failed: recipients.length };
   }
 
@@ -280,12 +320,17 @@ export async function sendCampaign(
     }
   }
 
-  // Update campaign stats — preserve total_recipients set by addRecipients.
-  // NOTE: 'send_failed'/'partial' are rejected by the 0027 status CHECK — that
-  // is finding 1.3 (invalid enum), out of scope for this sweep; left unchanged
-  // so it is not silently masked. Only fully-successful ('sent') writes persist.
-  const finalStatus = sent === 0 ? 'send_failed' : failed > 0 ? 'partial' : 'sent';
-  await admin
+  // Map the send outcome to a CHECK-valid crm_campaigns.status (0027 allows
+  // draft|sending|sent|paused|cancelled) so the campaign can never get stuck at
+  // 'sending' after a completed send attempt (audit 1.3):
+  //   • all recipients succeeded            → 'sent'
+  //   • some succeeded, some failed         → 'paused'  (needs operator attention)
+  //   • nothing sent (all failed)           → 'cancelled'
+  // The granular outcome ('sent'|'partial'|'send_failed') is LOGGED, not stored —
+  // crm_campaigns has no details/error column in 0027 to hold it.
+  const granularOutcome = sent === 0 ? 'send_failed' : failed > 0 ? 'partial' : 'sent';
+  const finalStatus = sent === 0 ? 'cancelled' : failed > 0 ? 'paused' : 'sent';
+  const { error: finalStatusErr } = await admin
     .from('crm_campaigns')
     .update({
       status: finalStatus,
@@ -293,6 +338,20 @@ export async function sendCampaign(
       updated_at: new Date().toISOString(),
     })
     .eq('id', campaign_id);
+  if (finalStatusErr) {
+    console.error('[crm/sendCampaign] final status write failed', {
+      campaign_id,
+      status: finalStatus,
+      error: finalStatusErr.message,
+    });
+  }
+  console.log('[crm/sendCampaign] campaign send complete', {
+    campaign_id,
+    sent,
+    failed,
+    status: finalStatus,
+    granular_outcome: granularOutcome,
+  });
 
   return { sent, failed };
 }

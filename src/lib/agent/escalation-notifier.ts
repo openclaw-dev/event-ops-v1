@@ -24,6 +24,17 @@ export async function notifyEscalationContacts(params: {
 }): Promise<void> {
   const { event, escalation_id, customer_phone, trigger_message, intent } = params;
 
+  // Demo guard (audit 8.2): a demo event must never trigger a real WhatsApp
+  // send — not even to ops escalation contacts. Both callers include `is_demo`
+  // in the event object they pass.
+  if (event.is_demo === true) {
+    console.warn('[escalation-notifier] demo event — escalation WhatsApp notification suppressed', {
+      event_id: event.id ?? null,
+      escalation_id,
+    });
+    return;
+  }
+
   const eventConfig = event.config as EventConfig | undefined;
   const contacts = eventConfig?.escalation_contacts ?? [];
 

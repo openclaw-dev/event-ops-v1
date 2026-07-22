@@ -43,29 +43,32 @@ function hoursAgo(n: number): string {
 // ─── Static demo data ─────────────────────────────────────────────────────────
 
 const EVENT_NAME = 'Coastline Festival 2026';
-const EVENT_SLUG = `coastline-festival-2026-demo-${Date.now()}`;
+// NOTE: the demo slug is generated INSIDE seedDemoEvent() (not here at module
+// scope). A module-level `${Date.now()}` is evaluated once per warm lambda, so
+// two demo seeds served by the same instance collided on the unique
+// (operator_id, slug) constraint (audit 10.4).
 
 const DEMO_ORDERS = [
-  { order_id: 'CF-001', customer_name: 'Ahmed Al Mansoori', customer_phone_e164: '+971501234001', customer_email: 'ahmed.m@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
-  { order_id: 'CF-002', customer_name: 'Fatima Al Rashidi', customer_phone_e164: '+971501234002', customer_email: 'fatima.r@example.com', ticket_type: 'VIP', amount_paid: 350, currency: 'SAR', vip_flag: true },
-  { order_id: 'CF-003', customer_name: 'Mohammed Al Zahrani', customer_phone_e164: '+966501234003', customer_email: 'mo.z@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
-  { order_id: 'CF-004', customer_name: 'Sara Al Otaibi', customer_phone_e164: '+966501234004', customer_email: 'sara.o@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
-  { order_id: 'CF-005', customer_name: 'Khalid Al Shamsi', customer_phone_e164: '+971501234005', customer_email: 'khalid.s@example.com', ticket_type: 'VIP', amount_paid: 350, currency: 'SAR', vip_flag: true },
-  { order_id: 'CF-006', customer_name: 'Nour El-Hassan', customer_phone_e164: '+971501234006', customer_email: 'nour.h@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
-  { order_id: 'CF-007', customer_name: 'Tariq Al Balushi', customer_phone_e164: '+968501234007', customer_email: 'tariq.b@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
-  { order_id: 'CF-008', customer_name: 'Layla Al Amri', customer_phone_e164: '+971501234008', customer_email: 'layla.a@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
-  { order_id: 'CF-009', customer_name: 'Omar Al Farsi', customer_phone_e164: '+971501234009', customer_email: 'omar.f@example.com', ticket_type: 'VIP', amount_paid: 350, currency: 'SAR', vip_flag: true },
-  { order_id: 'CF-010', customer_name: 'Reem Al Nuaimi', customer_phone_e164: '+971501234010', customer_email: 'reem.n@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
-  { order_id: 'CF-011', customer_name: 'Abdullah Al Suwaidi', customer_phone_e164: '+971501234011', customer_email: 'abd.s@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
-  { order_id: 'CF-012', customer_name: 'Mariam Al Kaabi', customer_phone_e164: '+971501234012', customer_email: 'mariam.k@example.com', ticket_type: 'VIP', amount_paid: 350, currency: 'SAR', vip_flag: true },
-  { order_id: 'CF-013', customer_name: 'Yousef Al Marzooqi', customer_phone_e164: '+971501234013', customer_email: 'yousef.m@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
-  { order_id: 'CF-014', customer_name: 'Hessa Al Falasi', customer_phone_e164: '+971501234014', customer_email: 'hessa.f@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
-  { order_id: 'CF-015', customer_name: 'Saad Al Qahtani', customer_phone_e164: '+966501234015', customer_email: 'saad.q@example.com', ticket_type: 'VIP', amount_paid: 350, currency: 'SAR', vip_flag: true },
-  { order_id: 'CF-016', customer_name: 'Aisha Al Harthi', customer_phone_e164: '+966501234016', customer_email: 'aisha.h@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
-  { order_id: 'CF-017', customer_name: 'Hamad Al Neyadi', customer_phone_e164: '+971501234017', customer_email: 'hamad.n@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
-  { order_id: 'CF-018', customer_name: 'Shaikha Al Mazrouei', customer_phone_e164: '+971501234018', customer_email: 'shaikha.m@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
-  { order_id: 'CF-019', customer_name: 'Faisal Al Ghamdi', customer_phone_e164: '+966501234019', customer_email: 'faisal.g@example.com', ticket_type: 'VIP', amount_paid: 350, currency: 'SAR', vip_flag: true },
-  { order_id: 'CF-020', customer_name: 'Noura Al Sayed', customer_phone_e164: '+966501234020', customer_email: 'noura.s@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
+  { order_id: 'CF-001', customer_name: 'Ahmed Al Mansoori', customer_phone_e164: '+999501234001', customer_email: 'ahmed.m@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
+  { order_id: 'CF-002', customer_name: 'Fatima Al Rashidi', customer_phone_e164: '+999501234002', customer_email: 'fatima.r@example.com', ticket_type: 'VIP', amount_paid: 350, currency: 'SAR', vip_flag: true },
+  { order_id: 'CF-003', customer_name: 'Mohammed Al Zahrani', customer_phone_e164: '+999501234003', customer_email: 'mo.z@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
+  { order_id: 'CF-004', customer_name: 'Sara Al Otaibi', customer_phone_e164: '+999501234004', customer_email: 'sara.o@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
+  { order_id: 'CF-005', customer_name: 'Khalid Al Shamsi', customer_phone_e164: '+999501234005', customer_email: 'khalid.s@example.com', ticket_type: 'VIP', amount_paid: 350, currency: 'SAR', vip_flag: true },
+  { order_id: 'CF-006', customer_name: 'Nour El-Hassan', customer_phone_e164: '+999501234006', customer_email: 'nour.h@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
+  { order_id: 'CF-007', customer_name: 'Tariq Al Balushi', customer_phone_e164: '+999501234007', customer_email: 'tariq.b@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
+  { order_id: 'CF-008', customer_name: 'Layla Al Amri', customer_phone_e164: '+999501234008', customer_email: 'layla.a@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
+  { order_id: 'CF-009', customer_name: 'Omar Al Farsi', customer_phone_e164: '+999501234009', customer_email: 'omar.f@example.com', ticket_type: 'VIP', amount_paid: 350, currency: 'SAR', vip_flag: true },
+  { order_id: 'CF-010', customer_name: 'Reem Al Nuaimi', customer_phone_e164: '+999501234010', customer_email: 'reem.n@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
+  { order_id: 'CF-011', customer_name: 'Abdullah Al Suwaidi', customer_phone_e164: '+999501234011', customer_email: 'abd.s@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
+  { order_id: 'CF-012', customer_name: 'Mariam Al Kaabi', customer_phone_e164: '+999501234012', customer_email: 'mariam.k@example.com', ticket_type: 'VIP', amount_paid: 350, currency: 'SAR', vip_flag: true },
+  { order_id: 'CF-013', customer_name: 'Yousef Al Marzooqi', customer_phone_e164: '+999501234013', customer_email: 'yousef.m@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
+  { order_id: 'CF-014', customer_name: 'Hessa Al Falasi', customer_phone_e164: '+999501234014', customer_email: 'hessa.f@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
+  { order_id: 'CF-015', customer_name: 'Saad Al Qahtani', customer_phone_e164: '+999501234015', customer_email: 'saad.q@example.com', ticket_type: 'VIP', amount_paid: 350, currency: 'SAR', vip_flag: true },
+  { order_id: 'CF-016', customer_name: 'Aisha Al Harthi', customer_phone_e164: '+999501234016', customer_email: 'aisha.h@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
+  { order_id: 'CF-017', customer_name: 'Hamad Al Neyadi', customer_phone_e164: '+999501234017', customer_email: 'hamad.n@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
+  { order_id: 'CF-018', customer_name: 'Shaikha Al Mazrouei', customer_phone_e164: '+999501234018', customer_email: 'shaikha.m@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
+  { order_id: 'CF-019', customer_name: 'Faisal Al Ghamdi', customer_phone_e164: '+999501234019', customer_email: 'faisal.g@example.com', ticket_type: 'VIP', amount_paid: 350, currency: 'SAR', vip_flag: true },
+  { order_id: 'CF-020', customer_name: 'Noura Al Sayed', customer_phone_e164: '+999501234020', customer_email: 'noura.s@example.com', ticket_type: 'General Admission', amount_paid: 150, currency: 'SAR', vip_flag: false },
 ] as const;
 
 const KB_SECTIONS = [
@@ -166,6 +169,10 @@ const KB_SECTIONS = [
 export async function seedDemoEvent(operatorId: string, userId?: string): Promise<SeedDemoResult> {
   const admin = createAdminClient();
 
+  // Generate a unique slug per invocation (audit 10.4) — must not be hoisted to
+  // module scope where it would be shared across seeds on a warm lambda.
+  const eventSlug = `coastline-festival-2026-demo-${Date.now()}`;
+
   // ── 1. Compute event dates ─────────────────────────────────────────────────
   const startDate = daysFromToday(21);
   const endDate = daysFromToday(21); // single-day festival
@@ -205,7 +212,7 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
     .insert({
       operator_id: operatorId,
       name: EVENT_NAME,
-      slug: EVENT_SLUG,
+      slug: eventSlug,
       event_type: 'festival',
       start_date: startDate,
       end_date: endDate,
@@ -234,9 +241,51 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
     .eq('id', eventId);
   assertSeedWrite(configPatchError, 'config.event_id patch');
 
-  // ── 4. Insert KB sections ──────────────────────────────────────────────────
+  // ── 4. Insert KB document + sections ───────────────────────────────────────
+  // kb_sections.kb_document_id is NOT NULL (0004) — every section must reference
+  // a kb_documents row. The seed previously omitted it, so the KB insert failed
+  // 23502 and the demo event seeded with ZERO KB sections, leaving the simulator
+  // unable to answer anything (audit 1.4). Create a stub document first and use
+  // its id for all sections.
+  //
+  // uploaded_by references operator_users(id) — NOT auth.users(id) — so the
+  // passed-in userId (an auth user id) is not valid here; resolve a membership
+  // row for this operator instead.
+  const { data: ouRow, error: ouError } = await admin
+    .from('operator_users')
+    .select('id')
+    .eq('operator_id', operatorId)
+    .limit(1)
+    .maybeSingle();
+  assertSeedWrite(ouError, 'operator_users lookup for KB document');
+  if (!ouRow) {
+    throw new Error(
+      'seedDemoEvent: no operator_users row for operator — cannot create demo KB document',
+    );
+  }
+  const uploadedBy = (ouRow as { id: string }).id;
+
+  const { data: kbDoc, error: kbDocError } = await admin
+    .from('kb_documents')
+    .insert({
+      event_id: eventId,
+      filename: 'demo_kb_coastline_festival.json',
+      file_format: 'json',
+      storage_path: `events/${eventId}/kb/demo_kb_coastline_festival.json`,
+      uploaded_by: uploadedBy,
+      section_count: KB_SECTIONS.length,
+    })
+    .select('id')
+    .single();
+  assertSeedWrite(kbDocError, 'kb_documents insert');
+  if (!kbDoc) {
+    throw new Error('seedDemoEvent: kb_documents insert returned no row');
+  }
+  const kbDocumentId = (kbDoc as { id: string }).id;
+
   const kbRows = KB_SECTIONS.map((s, i) => ({
     event_id: eventId,
+    kb_document_id: kbDocumentId,
     section_id: s.section_id,
     category: s.category,
     intent: s.intent,
@@ -279,7 +328,7 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
     .insert({
       event_id: eventId,
       operator_id: operatorId,
-      customer_phone_e164: '+971501234001',
+      customer_phone_e164: '+999501234001',
       channel: 'whatsapp',
       language: 'en',
       state: 'session_closed',
@@ -328,7 +377,7 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
     .insert({
       event_id: eventId,
       operator_id: operatorId,
-      customer_phone_e164: '+971501234008',
+      customer_phone_e164: '+999501234008',
       channel: 'whatsapp',
       language: 'en',
       state: 'session_closed',
@@ -371,7 +420,7 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
     .insert({
       event_id: eventId,
       operator_id: operatorId,
-      customer_phone_e164: '+971501234002',
+      customer_phone_e164: '+999501234002',
       channel: 'whatsapp',
       language: 'en',
       state: 'escalation_triggered',
@@ -426,7 +475,7 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
     .insert({
       event_id: eventId,
       operator_id: operatorId,
-      customer_phone_e164: '+966501234003',
+      customer_phone_e164: '+999501234003',
       channel: 'whatsapp',
       language: 'en',
       state: 'session_closed',
@@ -482,7 +531,7 @@ export async function seedDemoEvent(operatorId: string, userId?: string): Promis
     .insert({
       event_id: eventId,
       operator_id: operatorId,
-      customer_phone_e164: '+966501234004',
+      customer_phone_e164: '+999501234004',
       channel: 'whatsapp',
       language: 'ar',
       state: 'session_closed',

@@ -33,7 +33,7 @@ export async function sendHumanReply(
   // The user must belong to the operator that owns this event.
   const { data: event } = await supabase
     .from('events')
-    .select('id, operator_id')
+    .select('id, operator_id, is_demo')
     .eq('id', eventId)
     .is('deleted_at', null)
     .single();
@@ -91,6 +91,18 @@ export async function sendHumanReply(
   // DB, but the customer never received it (audit 6.1 — previously a warn-only
   // path that still returned success: true).
   if (convo.channel === 'whatsapp' && convo.customer_phone_e164) {
+    // Demo guard (audit 8.2): never deliver a demo conversation's reply to a
+    // real WhatsApp number. The reply is already saved and the conversation
+    // closed above; we simply skip the outbound send and report success.
+    if ((event as { is_demo?: boolean }).is_demo) {
+      console.warn('[sendHumanReply] demo event — WhatsApp delivery skipped', {
+        conversationId,
+        eventId,
+      });
+      revalidatePath(`/admin/events/${eventId}/conversations/${conversationId}`);
+      return { success: true };
+    }
+
     let deliveryError: string | null = null;
     try {
       const adapter = createWhatsAppAdapter();

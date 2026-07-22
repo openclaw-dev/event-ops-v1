@@ -125,7 +125,7 @@ export async function POST(request: Request) {
 
   const { data: event, error: eventError } = await supabase
     .from('events')
-    .select('id, operator_id, config, timezone, end_date')
+    .select('id, operator_id, config, timezone, end_date, is_demo')
     .eq('id', eventId)
     .is('deleted_at', null)
     .single();

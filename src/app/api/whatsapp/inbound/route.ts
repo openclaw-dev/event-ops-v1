@@ -360,7 +360,7 @@ async function handleCustomerSupportMessage(
   // Step 5: Fetch event config (needed by the state machine).
   const { data: eventRow } = await admin
     .from('events')
-    .select('config, operator_id, timezone, end_date')
+    .select('config, operator_id, timezone, end_date, is_demo')
     .eq('id', resolvedEventId)
     .single();
 

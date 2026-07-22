@@ -44,13 +44,24 @@ async function postToDialog360(
     body: JSON.stringify(body),
   });
 
+  // Mirror the [meta-adapter] postToMeta diagnostic pattern exactly — this is the
+  // single most valuable line when a reply never arrives despite a 200 webhook
+  // response (audit 6.8): log the real HTTP status + error body on failure, and
+  // the wamid on success.
   if (!res.ok) {
     const text = await res.text();
+    console.error('[360dialog-adapter] postToDialog360 FAILED', {
+      status: res.status,
+      to: body.to,
+      body: text,
+    });
     return { success: false, error: `360dialog API ${res.status}: ${text}` };
   }
 
   const data = (await res.json()) as Dialog360SendResponse;
-  return { success: true, wamid: data.messages?.[0]?.id };
+  const wamid = data.messages?.[0]?.id;
+  console.log('[360dialog-adapter] postToDialog360 SUCCESS', { wamid, to: body.to });
+  return { success: true, wamid };
 }
 
 // ─── Adapter ──────────────────────────────────────────────────────────────────
