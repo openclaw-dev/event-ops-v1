@@ -67,7 +67,11 @@ export function AdminShell({ operators, currentOperator, events, children }: Adm
         collapsed={collapsed}
         onToggle={toggle}
       />
-      <main className="relative flex flex-1 flex-col overflow-y-auto">
+      <main
+        className={`relative flex flex-1 flex-col overflow-y-auto${
+          collapsed ? ' pl-4' : ''
+        }`}
+      >
         {collapsed && (
           <button
             type="button"
