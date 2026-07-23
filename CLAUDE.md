@@ -4,6 +4,8 @@
 
 **v1 through v1.8 are complete and deployed.** Live at [tazkar.co](https://tazkar.co). Customer WhatsApp support flow verified working end-to-end on 20 Jun 2026 after a multi-bug debugging session (see Known Issues below for the full pattern catalogue — read this before touching WhatsApp code).
 
+**July 2026:** full codebase audit (`AUDIT_2026-07.md`, 59 findings) remediated across commits `84d7195..82bd3d0`. Both P0s fixed: RLS enabled on `whatsapp_session_state` (migration 0030) and the KB propagation silent no-op. Landing page redesign deployed (`af73e28`).
+
 ## Stack
 
 | Layer | Choice |
@@ -36,6 +38,10 @@
 | Vercel project | `event-ops-v1` |
 | GitHub repo | `openclaw-dev/event-ops-v1` (branch: `main`) |
 | Supabase project | `event-ops-dev` (org: `cardapi`) |
+
+### Deploy path
+
+Deploys are triggered by **`git push origin main`** (Vercel auto-deploy). Use the dashboard **Redeploy** button for env-var-only changes. The Vercel CLI (`vercel deploy --prod`) fails with TLS errors on this network and is **not** a documented deploy path — see the CLI-vs-dashboard note below.
 
 ### Environment variables (set in Vercel + `.env.local`)
 ```
@@ -131,6 +137,15 @@ If CLI hits connection errors, use SQL Editor directly:
 https://supabase.com/dashboard/project/gcuhmykneclcpczeoumm/sql/new
 After applying manually, repair history: `supabase migration repair --status applied 0026` (numeric prefix only, e.g. `0026` not `0026_payment_recovery`).
 
+### Migration 0029 shows local-only in migration history
+`supabase migration list` shows `0029` as local-only, but it **is applied on the live DB** (its `original_message` column exists in production) — a repair-history gap, not a schema gap. Fix: `supabase migration repair --status applied 0029`. (Same class as the circuit-breaker note above.)
+
+### Recovery opt-out is behavioural-only until migration 0031
+The inbound pre-router (`src/lib/whatsapp/inbound-pre-router.ts`) suppresses the AI and sends a confirmation on a STOP/opt-out keyword, but `payment_recovery_attempts` has **no opt-out column** (the 0026 status enum has no such value), so a recovery opt-out is **not durably recorded** — it only stops the current inbound turn. CRM has a related **re-add gap**: a recipient marked `status='opted_out'` is excluded from its campaign's send (sends target `status='pending'` only), but nothing blocks the same phone being re-added as `pending` in a **new** campaign. Both close when the deferred `whatsapp_opt_outs` table (migration 0031) lands.
+
+### iPhone Safari crash on client-side navigation from `/` to `/login`
+Reported open issue: navigating from the marketing landing (`/`) to `/login` on iOS Safari crashes the tab. **No fix commit exists** (HEAD is `82bd3d0`). Open, reproduce on a real iOS Safari session before attempting a fix — do not fix blind.
+
 ## Issues Shipped
 
 ### v1 (support agent)
@@ -159,7 +174,7 @@ Customer support flow verified working end-to-end after fixing: trailing-newline
 - TypeScript strict mode; `any` casts annotated with `// eslint-disable-next-line @typescript-eslint/no-explicit-any`
 - Package manager is **pnpm** — never use npm install
 - **Run `pnpm build` before every push**
-- **Deploy via `vercel deploy --prod`** not git push; fall back to the Vercel dashboard Redeploy button if the CLI throws TLS/network errors repeatedly
+- **Deploy via `git push origin main`** (Vercel auto-deploy); use the dashboard Redeploy button for env-var-only changes. The Vercel CLI (`vercel deploy --prod`) fails with TLS errors on this network and is not a documented path
 
 ## Schema facts (read before touching the database)
 
@@ -179,12 +194,14 @@ Customer support flow verified working end-to-end after fixing: trailing-newline
 - `escalations` — escalation queue per conversation. Silent insert failure is a known risk — check insert error explicitly.
 - `audit_log` — append-only, admin client only
 - `usage_events` — per-call API cost tracking
-- `whatsapp_session_state` — phone PK, pending_event_selection JSONB, **original_message TEXT (migration 0029 — preserves the customer's actual question across a multi-event selection round-trip)**, expires_at
+- `whatsapp_session_state` — phone PK, pending_event_selection JSONB, **original_message TEXT (migration 0029 — preserves the customer's actual question across a multi-event selection round-trip)**, expires_at. **RLS enabled with no policies (migration 0030); all writes via `createAdminClient()` only. Expired rows purged by the expire-pending cron.**
+- `whatsapp_processed_messages` — inbound wamid dedup (migration 0030). Insert-first via `markMessageProcessed()` (`src/lib/whatsapp/message-dedup.ts`); a `23505` unique-violation on the `wamid` PRIMARY KEY = duplicate webhook redelivery → dropped. RLS enabled, no policies (admin-client only). Rows purged by the expire-pending cron.
 - `payment_recovery_attempts` — failed payment recovery tracking, status lifecycle, 22% fee column (migration 0026)
 - `crm_campaigns` + `crm_campaign_recipients` — re-marketing campaigns with conversion tracking (migration 0027)
 - `gate_scans` — QR scan history, duplicate detection via admitted-unique index on (event_id, scanned_code) WHERE admitted (migration 0028)
 - `operators.whatsapp_business_phone_number_id` — **must be unique across all operators in practice; not DB-enforced.** Verify uniqueness manually after any direct SQL write (see Known Issues above).
 - `current_user_operator_ids()` — RLS helper, use in new migration policies. **Existence of a SELECT policy using this helper does NOT imply an UPDATE/INSERT policy exists — check explicitly.**
+- **Reserved migration numbers — do NOT reuse:** `0031` (`whatsapp_opt_outs` — durable cross-flow opt-out) and `0032` (recovery webhook attribution) are designed but **not applied**. The highest applied migration is `0030`. A new migration must start at `0033`.
 
 ## Key file locations
 
@@ -196,6 +213,8 @@ Customer support flow verified working end-to-end after fixing: trailing-newline
 - WhatsApp adapter factory: `src/lib/whatsapp/adapter-factory.ts`
 - WhatsApp event routing logic: `src/lib/agent/whatsapp-router.ts`
 - WhatsApp session state (original_message persistence): `src/lib/agent/whatsapp-session-state.ts`
+- WhatsApp inbound pre-router (STOP/opt-out keywords EN+AR, recovery/CRM context routing — runs as **Step 1.5** in the inbound route, before any AI call): `src/lib/whatsapp/inbound-pre-router.ts`
+- WhatsApp inbound wamid dedup helper (`markMessageProcessed`, insert-first on `whatsapp_processed_messages`): `src/lib/whatsapp/message-dedup.ts`
 - Schemas: `src/lib/schemas.ts`
 - Agent types: `src/lib/agent/types.ts`
 - Data entry normaliser: `src/lib/data-entry/normaliser.ts`
@@ -241,6 +260,7 @@ Customer support flow verified working end-to-end after fixing: trailing-newline
 - pnpm not npm
 - Before any new write to a table, check the table's actual migration file for which RLS policies exist — do not assume UPDATE/INSERT works because SELECT does
 - Run `pnpm build` before pushing
-- Deploy via `vercel deploy --prod`; fall back to Vercel dashboard if CLI repeatedly fails with TLS/network errors
+- Deploy via `git push origin main` (Vercel auto-deploy); use the dashboard Redeploy button for env-var-only changes. The Vercel CLI fails with TLS errors on this network and is not a documented path
 - Apply migrations via SQL editor if CLI times out, then `supabase migration repair --status applied <version>`
 - Add diagnostic console.log at every decision branch in any new multi-step async flow (webhook handlers, multi-turn conversation logic)
+- **Documentation gate:** any session that (a) creates or applies a migration, (b) changes deploy or env-var process, or (c) discovers a durable bug pattern must update the corresponding CLAUDE.md section in the same session, before the completion gate. A session is not done while CLAUDE.md contradicts the repo.
