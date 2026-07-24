@@ -388,16 +388,31 @@ export function buildRevenueLeakAuditHtml(data: RevenueLeakAuditData): string {
       <span class="val">${fmtMoney(data.recoverable_revenue_sar, data.currency)}</span>
     </div>
     <div class="line">
-      <span>tazkar.co recovery fee (22% of recovered)</span>
+      <span>tazkar.co recovery fee (22% of recoverable estimate)</span>
       <span class="val">&minus;${fmtMoney(data.recovery_fee_sar, data.currency)}</span>
     </div>
     <div class="line net">
-      <span>Net recovery to operator</span>
+      <span>Net recovery to operator (estimated)</span>
       <span class="val">${fmtMoney(netRecovery, data.currency)}</span>
     </div>
     <div class="fine-print">
       Recovery estimate based on industry average 30% resale rate for no-shows and 100% recovery
       rate for failed authorizations with payment link retry. Actual recovery may vary.
+    </div>
+
+    <div class="headline" style="margin-top:14px">Confirmed Recovered to Date</div>
+    <div class="line">
+      <span>Payments confirmed by signed payment webhook</span>
+      <span class="val">${fmtMoney(data.confirmed_recovered_sar, data.currency)}</span>
+    </div>
+    <div class="line">
+      <span>tazkar.co fee on confirmed recoveries (22%)</span>
+      <span class="val">&minus;${fmtMoney(data.confirmed_recovery_fee_sar, data.currency)}</span>
+    </div>
+    <div class="fine-print">
+      Confirmed figures count only captured payments verified by a signed payment-provider
+      webhook. The fee is billed exclusively on this confirmed amount; customer &ldquo;paid&rdquo;
+      replies are not counted.
     </div>
   </div>
 

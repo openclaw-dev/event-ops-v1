@@ -30,9 +30,17 @@ export interface RevenueLeakAuditData {
   duplicate_scan_count: number;
   gate_failure_rate_pct: number;
 
-  // Recovery estimate
+  // Recovery estimate (forward-looking OPPORTUNITY projection — not money
+  // actually recovered; "Actual recovery may vary").
   recoverable_revenue_sar: number;
   recovery_fee_sar: number;
+
+  // Recovery ACTUALS — money a signed PSP webhook has confirmed as captured
+  // (sum of confirmed_amount where webhook_confirmed_at IS NOT NULL) and the
+  // billable 22% fee on it. Customer text claims never enter these numbers
+  // (DECISIONS.md 2026-07-22).
+  confirmed_recovered_sar: number;
+  confirmed_recovery_fee_sar: number;
 
   // Support load
   total_conversations: number;
@@ -187,10 +195,35 @@ export async function getRevenueLeakAuditData(
       .slice(0, 5);
   }
 
-  // ── Recovery estimate ──────────────────────────────────────────────────────
+  // ── Recovery estimate (projection) ───────────────────────────────────────────
   const recoverable_revenue_sar =
     failed_payment_revenue_sar + no_show_revenue_sar * 0.3;
   const recovery_fee_sar = recoverable_revenue_sar * 0.22;
+
+  // ── Recovery actuals (webhook-confirmed only) ────────────────────────────────
+  // Sum confirmed_amount over rows a signed PSP webhook confirmed. Paginated for
+  // exactness like the other aggregates in this report (audit 4.14).
+  const recoveryRows = await fetchAllRows<{
+    confirmed_amount: number | string | null;
+    webhook_confirmed_at: string | null;
+  }>(async (from, to) => {
+    const { data, error } = await admin
+      .from('payment_recovery_attempts')
+      .select('confirmed_amount, webhook_confirmed_at')
+      .eq('event_id', eventId)
+      .range(from, to);
+    return {
+      data: data as Array<{
+        confirmed_amount: number | string | null;
+        webhook_confirmed_at: string | null;
+      }> | null,
+      error,
+    };
+  });
+  const confirmed_recovered_sar = recoveryRows
+    .filter((r) => r.webhook_confirmed_at != null)
+    .reduce((sum, r) => sum + toNumber(r.confirmed_amount), 0);
+  const confirmed_recovery_fee_sar = confirmed_recovered_sar * 0.22;
 
   return {
     event_name,
@@ -214,6 +247,8 @@ export async function getRevenueLeakAuditData(
     gate_failure_rate_pct,
     recoverable_revenue_sar,
     recovery_fee_sar,
+    confirmed_recovered_sar,
+    confirmed_recovery_fee_sar,
     total_conversations,
     escalated_conversations,
     top_intents,

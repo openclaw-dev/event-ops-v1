@@ -5,27 +5,28 @@
  * AI classification/generation). Intercepts messages that must not be answered
  * by the generic support agent (audit 5.3):
  *
- *   (a) STOP / opt-out keywords — mark matching CRM campaign recipients
- *       'opted_out', acknowledge with a confirmation, and suppress the AI.
- *       This is a compliance requirement: the recovery/CRM messages tell the
- *       customer "Reply STOP to opt out", so STOP must never reach the agent.
+ *   (a) STOP / opt-out keywords — record a DURABLE, cross-flow opt-out in
+ *       whatsapp_opt_outs (migration 0031, the authoritative registry the
+ *       outbound guard consults before every business-initiated send), also
+ *       mark matching CRM campaign recipients 'opted_out', acknowledge with a
+ *       confirmation, and suppress the AI. Compliance requirement: recovery/CRM
+ *       messages tell the customer "Reply STOP to opt out", so STOP must never
+ *       reach the agent — and must silence ALL future outreach, not just the
+ *       current campaign.
  *   (b) recovery / CRM reply context — a reply from a phone that has an open
  *       payment-recovery attempt or campaign recipient is logged, and a
- *       completion signal ("paid" / "done" / "تم") transitions the matched
- *       recovery attempt(s) to 'completed' via markRecoveryCompleted (which
- *       previously had zero callers — audit 5.3c). Non-completion replies are
- *       logged and fall through to the support agent (minimum-viable per 5.3b;
- *       we deliberately do not over-build a bespoke recovery conversation).
+ *       completion signal ("paid" / "done" / "تم") records a SOFT
+ *       heuristic_paid_signal_at via markRecoveryHeuristicSignal. It does NOT
+ *       set status='completed' — that transition is reserved for the signed
+ *       payment-webhook processor (DECISIONS.md 2026-07-22). Non-completion
+ *       replies fall through to the support agent (minimum-viable per 5.3b).
  *
- * SCHEMA NOTE (audit 5.3a) — READ BEFORE EXTENDING:
- *   `payment_recovery_attempts` has NO opt-out status or column: the 0026 status
- *   enum is (pending|sent|opened|completed|failed|expired). A recovery opt-out
- *   therefore CANNOT be durably recorded without a schema change, which is out
- *   of scope for this fix session (no migration was written). We honour the
- *   opt-out behaviourally (suppress AI + confirm) and log the matched recovery
- *   attempts, but only CRM recipients are durably marked, because the 0027
- *   `crm_campaign_recipients.status` enum DOES include 'opted_out'. A durable,
- *   cross-flow opt-out would need a dedicated column/table — see AUDIT_2026-07.
+ * OPT-OUT DURABILITY (updated — closes audit 5.3a):
+ *   Opt-outs are now durably recorded in whatsapp_opt_outs (operator_id,
+ *   phone_e164), so both the recovery flow AND CRM honour them via the outbound
+ *   guard. We still additionally mark open CRM recipients 'opted_out' (0027
+ *   enum) for per-campaign reporting, but the whatsapp_opt_outs table is the
+ *   authority.
  *
  * All access is via createAdminClient() (the webhook has no user session); every
  * query is scoped by the operator that owns the receiving WhatsApp number.
@@ -33,7 +34,8 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { WhatsAppAdapter } from '@/lib/whatsapp/types';
-import { markRecoveryCompleted } from '@/lib/recovery/payment-recovery';
+import { normalizePhone } from '@/lib/whatsapp/phone';
+import { markRecoveryHeuristicSignal } from '@/lib/recovery/payment-recovery';
 
 // Exact-match (after normalisation) opt-out keywords. Exact match — not
 // substring — so an ordinary sentence containing "stop" does not trigger a
@@ -97,7 +99,28 @@ export async function preRouteInbound(params: {
 
   // ── (a) Opt-out ───────────────────────────────────────────────────────────
   if (OPT_OUT_KEYWORDS.has(norm)) {
-    // CRM: durably mark open recipients 'opted_out' (0027 enum supports it).
+    // AUTHORITATIVE, cross-flow opt-out (migration 0031). Upsert with ON
+    // CONFLICT DO NOTHING so a repeated STOP is idempotent and never errors.
+    // Key is normalised so it is byte-identical to the guard's lookup key.
+    const optOutPhone = normalizePhone(phone);
+    const { error: optOutErr } = await admin.from('whatsapp_opt_outs').upsert(
+      {
+        operator_id: operatorId,
+        phone_e164: optOutPhone,
+        source: 'stop_keyword',
+        conversation_id: null, // pre-router runs before a conversation row exists
+      },
+      { onConflict: 'operator_id,phone_e164', ignoreDuplicates: true },
+    );
+    if (optOutErr) {
+      console.error('[inbound] pre-router: whatsapp_opt_outs write failed', {
+        phone: optOutPhone,
+        error: optOutErr.message,
+      });
+    }
+
+    // CRM: also mark open recipients 'opted_out' (0027 enum) for per-campaign
+    // reporting. whatsapp_opt_outs above is the authority for enforcement.
     const { data: crmOptedOut, error: crmErr } = await admin
       .from('crm_campaign_recipients')
       .update({ status: 'opted_out' })
@@ -132,8 +155,9 @@ export async function preRouteInbound(params: {
       phone,
       crm_recipients_opted_out: crmOptedOut?.length ?? 0,
       recovery_attempts_matched: recMatched?.length ?? 0,
-      // No schema column exists to persist a recovery opt-out — audit 5.3a.
-      recovery_durably_recorded: false,
+      // Durably recorded in whatsapp_opt_outs (0031) — enforced across flows
+      // by the outbound guard, not just this turn (closes audit 5.3a).
+      opt_out_durably_recorded: true,
     });
 
     const sendResult = await adapter.sendText({
@@ -164,24 +188,27 @@ export async function preRouteInbound(params: {
   const openRecovery = (recOpen ?? []) as Array<{ id: string }>;
 
   if (openRecovery.length > 0) {
-    // (c) Completion signal → wire markRecoveryCompleted (was uncalled).
+    // (c) Completion signal → record a SOFT heuristic signal ONLY. This must
+    // NOT set status='completed'; that transition belongs solely to the signed
+    // payment-webhook processor (DECISIONS.md 2026-07-22). Customer-facing copy
+    // is intentionally unchanged this session.
     if (COMPLETION_KEYWORDS.has(norm)) {
-      let completed = 0;
+      let signalled = 0;
       for (const attempt of openRecovery) {
         try {
-          await markRecoveryCompleted(attempt.id);
-          completed++;
+          await markRecoveryHeuristicSignal(attempt.id);
+          signalled++;
         } catch (err) {
-          console.error('[inbound] pre-router: markRecoveryCompleted failed', {
+          console.error('[inbound] pre-router: markRecoveryHeuristicSignal failed', {
             recovery_attempt_id: attempt.id,
             error: err instanceof Error ? err.message : String(err),
           });
         }
       }
-      if (completed > 0) {
-        console.log('[inbound] pre-router: recovery completion — marked completed', {
+      if (signalled > 0) {
+        console.log('[inbound] pre-router: recovery paid-claim — soft signal recorded', {
           phone,
-          completed,
+          signalled,
           matched: openRecovery.length,
         });
         const sendResult = await adapter.sendText({

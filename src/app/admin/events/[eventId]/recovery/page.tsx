@@ -78,10 +78,14 @@ export default async function RecoveryPage({ params }: RecoveryPageProps) {
       <Separator />
 
       {/* Metrics bar */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <MetricCard label="Total attempts" value={stats.total_attempts} />
         <MetricCard label="Messages sent" value={stats.sent} accent="blue" />
-        <MetricCard label="Completed" value={stats.completed} accent="emerald" />
+        <MetricCard label="Confirmed" value={stats.completed} accent="emerald" />
+        <MetricCard
+          label="Awaiting confirmation"
+          value={stats.claimed_awaiting_confirmation}
+        />
         <MetricCard
           label="Recovered"
           value={`SAR ${Math.round(stats.recovered_amount_sar).toLocaleString()}`}
@@ -93,7 +97,9 @@ export default async function RecoveryPage({ params }: RecoveryPageProps) {
         />
       </div>
       <p className="text-xs text-muted-foreground">
-        Completion rate requires a payment webhook — contact support to configure.
+        &ldquo;Recovered&rdquo; and the 22% fee count only payments confirmed by a
+        signed payment webhook. &ldquo;Awaiting confirmation&rdquo; are customers who
+        replied that they paid but have not been confirmed by the provider yet.
       </p>
 
       <Separator />

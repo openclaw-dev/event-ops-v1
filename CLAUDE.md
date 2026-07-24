@@ -61,7 +61,11 @@ DIALOG360_API_KEY=
 DIALOG360_WABA_ID=
 CRON_SECRET=
 RESEND_API_KEY=
+CHECKOUT_WEBHOOK_SECRET=
+TAP_WEBHOOK_SECRET=
 ```
+
+**`CHECKOUT_WEBHOOK_SECRET` / `TAP_WEBHOOK_SECRET`** authenticate the payment webhooks at `/api/webhooks/payments/[provider]` (single-tenant for the pilot; per-operator secrets deferred). Absent secret → that provider's webhook returns 500 (not configured); invalid signature → 401, stores nothing.
 
 **`WHATSAPP_PROVIDER` must be exactly `meta` or `360dialog` with NO trailing newline or whitespace.** `provider === 'meta'` is an exact string match — `"meta\n" !== "meta"`. This single bug took an entire debugging session to find because it causes the adapter factory to throw on every webhook call with no visible symptom other than "POST returns 200 but zero outgoing requests."
 
@@ -140,8 +144,8 @@ After applying manually, repair history: `supabase migration repair --status app
 ### Migration 0029 shows local-only in migration history
 `supabase migration list` shows `0029` as local-only, but it **is applied on the live DB** (its `original_message` column exists in production) — a repair-history gap, not a schema gap. Fix: `supabase migration repair --status applied 0029`. (Same class as the circuit-breaker note above.)
 
-### Recovery opt-out is behavioural-only until migration 0031
-The inbound pre-router (`src/lib/whatsapp/inbound-pre-router.ts`) suppresses the AI and sends a confirmation on a STOP/opt-out keyword, but `payment_recovery_attempts` has **no opt-out column** (the 0026 status enum has no such value), so a recovery opt-out is **not durably recorded** — it only stops the current inbound turn. CRM has a related **re-add gap**: a recipient marked `status='opted_out'` is excluded from its campaign's send (sends target `status='pending'` only), but nothing blocks the same phone being re-added as `pending` in a **new** campaign. Both close when the deferred `whatsapp_opt_outs` table (migration 0031) lands.
+### Recovery opt-out + CRM re-add gaps — CLOSED by migration 0031 (pending apply)
+**Both gaps are now fixed in code** (July 2026 opt-out session). Durable opt-outs live in `whatsapp_opt_outs` (migration 0031), keyed by `(operator_id, phone_e164)`. Every **business-initiated** send (payment recovery, CRM) now goes through the single chokepoint `sendBusinessInitiated()` in `src/lib/whatsapp/outbound-guard.ts`, which consults the registry and returns `{ skipped: 'opted_out' }` without contacting the adapter. STOP/opt-out keywords in the inbound pre-router upsert into `whatsapp_opt_outs` (source `stop_keyword`, ON CONFLICT DO NOTHING). This closes both the old recovery opt-out gap (no durable column) and the CRM re-add gap (a freshly re-added `pending` recipient is now caught operator-wide, marked `opted_out` on send). Enforcement is build-time: an ESLint `no-restricted-imports` rule forbids importing the adapter factory/adapters outside the guard, the factory, and the reply-to-inbound paths, so a bypass fails `pnpm build`. **Reply-to-inbound sends (support-agent reply, pre-router confirmations, human dashboard reply, escalation notifier) are exempt by design** and still use the factory directly. Fully effective once 0031 is applied.
 
 ### iPhone Safari crash on client-side navigation from `/` to `/login`
 Reported open issue: navigating from the marketing landing (`/`) to `/login` on iOS Safari crashes the tab. **No fix commit exists** (HEAD is `82bd3d0`). Open, reproduce on a real iOS Safari session before attempting a fix — do not fix blind.
@@ -196,12 +200,14 @@ Customer support flow verified working end-to-end after fixing: trailing-newline
 - `usage_events` — per-call API cost tracking
 - `whatsapp_session_state` — phone PK, pending_event_selection JSONB, **original_message TEXT (migration 0029 — preserves the customer's actual question across a multi-event selection round-trip)**, expires_at. **RLS enabled with no policies (migration 0030); all writes via `createAdminClient()` only. Expired rows purged by the expire-pending cron.**
 - `whatsapp_processed_messages` — inbound wamid dedup (migration 0030). Insert-first via `markMessageProcessed()` (`src/lib/whatsapp/message-dedup.ts`); a `23505` unique-violation on the `wamid` PRIMARY KEY = duplicate webhook redelivery → dropped. RLS enabled, no policies (admin-client only). Rows purged by the expire-pending cron.
-- `payment_recovery_attempts` — failed payment recovery tracking, status lifecycle, 22% fee column (migration 0026)
-- `crm_campaigns` + `crm_campaign_recipients` — re-marketing campaigns with conversion tracking (migration 0027)
+- `payment_recovery_attempts` — failed payment recovery tracking, status lifecycle (`pending|sent|opened|completed|failed|expired`), `amount_sar`, 22% `recovery_fee_sar` (migration 0026). **Phone column is `customer_phone_e164` (E.164, leading `+`).** Attribution columns (migration 0032): `provider`, `provider_payment_id`, `provider_reference`, `webhook_confirmed_at`, `confirmed_amount NUMERIC(12,2)`, `confirmed_currency`, `heuristic_paid_signal_at`, `recovery_ref` (UNIQUE, `TZK-XXXXXX`). **`status='completed'` is set ONLY by the payment-webhook processor via `markRecoveryCompleted`; the pre-router paid-keyword path sets `heuristic_paid_signal_at` only (soft signal, never billed).** Recovered/fee stats sum `confirmed_amount` over `webhook_confirmed_at IS NOT NULL` rows.
+- `whatsapp_opt_outs` — **authoritative, per-operator, cross-flow opt-out registry (migration 0031).** PK `(operator_id, phone_e164)`; `source` (`stop_keyword|manual|crm_unsubscribe|import`); `conversation_id`; CHECK on E.164 (`^\+[1-9][0-9]{6,14}$`). **RLS enabled, SELECT-only policy via `current_user_operator_ids()`; all writes via `createAdminClient()` (guard + inbound pre-router).** Consulted by `sendBusinessInitiated()` before every business-initiated send. Backfilled from `crm_campaign_recipients.status='opted_out'`.
+- `payment_webhook_events` — **append-only signed-PSP-webhook ledger (migration 0032).** `UNIQUE (provider, provider_event_id)` for idempotent replay (23505 → 200 early); `signature_valid`, `payload JSONB`, `recovery_attempt_id`, `processed_at`. **RLS enabled, SELECT-only policy; admin-client writes only, no UPDATE/DELETE path in code.**
+- `crm_campaigns` + `crm_campaign_recipients` — re-marketing campaigns with conversion tracking (migration 0027). `crm_campaign_recipients.status` enum includes `opted_out`; sends target `pending` only. Opt-out enforcement is now the `whatsapp_opt_outs` registry via the outbound guard (a re-added `pending` recipient is still skipped + marked `opted_out`).
 - `gate_scans` — QR scan history, duplicate detection via admitted-unique index on (event_id, scanned_code) WHERE admitted (migration 0028)
 - `operators.whatsapp_business_phone_number_id` — **must be unique across all operators in practice; not DB-enforced.** Verify uniqueness manually after any direct SQL write (see Known Issues above).
 - `current_user_operator_ids()` — RLS helper, use in new migration policies. **Existence of a SELECT policy using this helper does NOT imply an UPDATE/INSERT policy exists — check explicitly.**
-- **Reserved migration numbers — do NOT reuse:** `0031` (`whatsapp_opt_outs` — durable cross-flow opt-out) and `0032` (recovery webhook attribution) are designed but **not applied**. The highest applied migration is `0030`. A new migration must start at `0033`.
+- **Migration numbers:** `0031` (`whatsapp_opt_outs` — durable cross-flow opt-out) and `0032` (recovery webhook attribution + `payment_webhook_events`) now **exist as files** (`supabase/migrations/`) but are **pending manual apply** (SQL editor, then `supabase migration repair --status applied 0031 0032`). The highest **applied** migration is still `0030` until they are run. **The next free migration number is `0033`.** Note: the recovery/webhook code (recovery_ref insert, confirmed_amount reads, the payments webhook) requires 0031+0032 to be applied — apply them before/with the deploy that ships this code, or those paths will error on the missing columns/tables.
 
 ## Key file locations
 
@@ -215,6 +221,11 @@ Customer support flow verified working end-to-end after fixing: trailing-newline
 - WhatsApp session state (original_message persistence): `src/lib/agent/whatsapp-session-state.ts`
 - WhatsApp inbound pre-router (STOP/opt-out keywords EN+AR, recovery/CRM context routing — runs as **Step 1.5** in the inbound route, before any AI call): `src/lib/whatsapp/inbound-pre-router.ts`
 - WhatsApp inbound wamid dedup helper (`markMessageProcessed`, insert-first on `whatsapp_processed_messages`): `src/lib/whatsapp/message-dedup.ts`
+- **Outbound chokepoint for business-initiated sends (opt-out enforcement — `sendBusinessInitiated`, `assertWhatsAppConfigured`): `src/lib/whatsapp/outbound-guard.ts`**
+- Shared phone normaliser (`normalizePhone`, used by guard + STOP writer): `src/lib/whatsapp/phone.ts`
+- Payment webhook endpoint (signed-PSP confirmation, sole `status='completed'` path): `src/app/api/webhooks/payments/[provider]/route.ts`
+- Payment webhook signature verifiers (one per provider): `src/lib/payments/verifiers/checkout.ts` (`cko-signature` HMAC-SHA256), `src/lib/payments/verifiers/tap.ts` (`hashstring`); shared: `src/lib/payments/types.ts`, `src/lib/payments/amount.ts`
+- Opt-out / webhook unit tests (vitest): `test/*.test.ts`; run with `pnpm test`. Chainable Supabase mock: `test/helpers/supabase-mock.ts`
 - Schemas: `src/lib/schemas.ts`
 - Agent types: `src/lib/agent/types.ts`
 - Data entry normaliser: `src/lib/data-entry/normaliser.ts`
@@ -260,6 +271,8 @@ Customer support flow verified working end-to-end after fixing: trailing-newline
 - pnpm not npm
 - Before any new write to a table, check the table's actual migration file for which RLS policies exist — do not assume UPDATE/INSERT works because SELECT does
 - Run `pnpm build` before pushing
+- Run `pnpm test` (vitest) before pushing when touching opt-out / recovery / webhook code; tests live in `test/` (excluded from the Next build via tsconfig)
+- **Business-initiated WhatsApp sends (recovery, CRM, future campaigns) MUST go through `sendBusinessInitiated()` in `outbound-guard.ts` — never import the adapter factory/adapters directly (ESLint blocks it). Reply-to-inbound paths are the only exemptions.**
 - Deploy via `git push origin main` (Vercel auto-deploy); use the dashboard Redeploy button for env-var-only changes. The Vercel CLI fails with TLS errors on this network and is not a documented path
 - Apply migrations via SQL editor if CLI times out, then `supabase migration repair --status applied <version>`
 - Add diagnostic console.log at every decision branch in any new multi-step async flow (webhook handlers, multi-turn conversation logic)

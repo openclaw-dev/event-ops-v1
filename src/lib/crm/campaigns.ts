@@ -1,5 +1,9 @@
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createWhatsAppAdapter } from '@/lib/whatsapp/adapter-factory';
+import {
+  sendBusinessInitiated,
+  isSkipped,
+  assertWhatsAppConfigured,
+} from '@/lib/whatsapp/outbound-guard';
 import { localDateStringInTz, DEFAULT_EVENT_TZ } from '@/lib/dates';
 import { fetchAllRows } from '@/lib/supabase/paginate';
 
@@ -245,9 +249,11 @@ export async function sendCampaign(
     });
   }
 
-  let adapter: ReturnType<typeof createWhatsAppAdapter> | null = null;
   try {
-    adapter = createWhatsAppAdapter();
+    // Pre-flight: fail the whole campaign cleanly if WhatsApp isn't configured,
+    // rather than looping an opt-out lookup + failure per recipient. Sends
+    // themselves go through the outbound guard (opt-out enforcement).
+    assertWhatsAppConfigured();
   } catch (err) {
     // WhatsApp not configured — mark all recipients failed.
     const errMsg = err instanceof Error ? err.message : String(err);
@@ -294,12 +300,23 @@ export async function sendCampaign(
         event: targetEventName,
       });
 
-      const result = await adapter.sendText({
-        to_phone_e164: recipient.customer_phone_e164,
-        text,
+      const result = await sendBusinessInitiated({
+        operatorId: campaign.operator_id,
+        phone: recipient.customer_phone_e164,
+        messageType: 'template',
+        payload: { text },
       });
 
-      if (result.success) {
+      if (isSkipped(result)) {
+        // Opted out — durably mark 'opted_out' (0027 enum). This is what closes
+        // the re-add gap: even a phone freshly re-added as 'pending' in a NEW
+        // campaign is caught here by the operator-wide opt-out registry, so it
+        // is never messaged again.
+        await markRecipient(recipient.id, { status: 'opted_out' });
+        console.log('[crm/sendCampaign] recipient skipped — opted out', {
+          recipient_id: recipient.id,
+        });
+      } else if (result.success) {
         sent++;
         await markRecipient(recipient.id, {
           status: 'sent',

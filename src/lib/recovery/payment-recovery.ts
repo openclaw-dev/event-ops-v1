@@ -1,5 +1,7 @@
+import { randomBytes } from 'node:crypto';
+
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createWhatsAppAdapter } from '@/lib/whatsapp/adapter-factory';
+import { sendBusinessInitiated, isSkipped } from '@/lib/whatsapp/outbound-guard';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -9,9 +11,15 @@ export interface RecoveryStats {
   completed: number;
   expired: number;
   total_amount_sar: number;
+  // Actuals — sourced EXCLUSIVELY from webhook-confirmed rows (audit: fee is
+  // billed only on signed-PSP-confirmed captures; customer text claims never
+  // enter these numbers). See DECISIONS.md 2026-07-22.
   recovered_amount_sar: number;
   recovery_rate_pct: number;
   recovery_fee_sar: number;
+  // Soft signal: customer said "paid"/"تم" but no signed webhook has confirmed.
+  // Never billed; surfaced separately so the dashboard can show pipeline.
+  claimed_awaiting_confirmation: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -21,6 +29,20 @@ function toNumber(v: number | string | null | undefined): number {
   if (typeof v === 'number') return v;
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+// Correlation key embedded in the PSP payment-link reference. The payment
+// webhook matches an incoming capture back to its attempt via this ref
+// (DECISIONS.md 2026-07-22). 'TZK-' + 6 uppercase RFC-4648 base32 chars.
+const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+export function generateRecoveryRef(): string {
+  const bytes = randomBytes(6);
+  let suffix = '';
+  for (let i = 0; i < 6; i++) {
+    suffix += BASE32_ALPHABET[bytes[i] % 32];
+  }
+  return `TZK-${suffix}`;
 }
 
 function fmtAmount(amount: number): string {
@@ -59,6 +81,7 @@ export async function createRecoveryAttempt(params: {
       payment_link: params.payment_link,
       payment_provider: params.payment_provider,
       recovery_fee_sar: params.amount_sar * 0.22,
+      recovery_ref: generateRecoveryRef(),
     })
     .select('id')
     .single();
@@ -76,13 +99,13 @@ export async function sendRecoveryMessage(params: {
   recovery_attempt_id: string;
   event_name: string;
   customer_name?: string;
-}): Promise<{ success: boolean; wamid?: string; error?: string }> {
+}): Promise<{ success: boolean; wamid?: string; error?: string; skipped?: boolean }> {
   const admin = createAdminClient();
 
   const { data: attempt } = await admin
     .from('payment_recovery_attempts')
     .select(
-      'customer_phone_e164, customer_name, ticket_type, quantity, amount_sar, payment_link, event_id',
+      'operator_id, customer_phone_e164, customer_name, ticket_type, quantity, amount_sar, payment_link, event_id',
     )
     .eq('id', params.recovery_attempt_id)
     .single();
@@ -92,6 +115,7 @@ export async function sendRecoveryMessage(params: {
   }
 
   const a = attempt as {
+    operator_id: string;
     customer_phone_e164: string;
     customer_name: string | null;
     ticket_type: string | null;
@@ -153,11 +177,24 @@ export async function sendRecoveryMessage(params: {
   };
 
   try {
-    const adapter = createWhatsAppAdapter();
-    const result = await adapter.sendText({
-      to_phone_e164: a.customer_phone_e164,
-      text,
+    // Business-initiated → MUST go through the outbound guard (opt-out check).
+    const result = await sendBusinessInitiated({
+      operatorId: a.operator_id,
+      phone: a.customer_phone_e164,
+      messageType: 'template',
+      payload: { text },
     });
+
+    if (isSkipped(result)) {
+      // Opted out: no message sent. Terminal 'failed' (the enum has no
+      // dedicated skip state) so the attempt does not linger 'pending' or
+      // count toward recovered revenue; the reason is logged for audit.
+      await markAttempt({ status: 'failed', updated_at: new Date().toISOString() });
+      console.log('[recovery/sendRecoveryMessage] suppressed — recipient opted out', {
+        recovery_attempt_id: params.recovery_attempt_id,
+      });
+      return { success: false, error: 'opted_out', skipped: true };
+    }
 
     if (result.success) {
       await markAttempt({
@@ -180,22 +217,66 @@ export async function sendRecoveryMessage(params: {
   }
 }
 
-// ─── markRecoveryCompleted ────────────────────────────────────────────────────
-
-export async function markRecoveryCompleted(
+// ─── markRecoveryHeuristicSignal ──────────────────────────────────────────────
+// A customer text like "paid" / "تم" is a SOFT signal, not a confirmation. It
+// records heuristic_paid_signal_at only — it must NEVER set status='completed'
+// or webhook_confirmed_at (those are reserved for the signed-PSP webhook
+// processor; see DECISIONS.md 2026-07-22 and markRecoveryCompleted below).
+export async function markRecoveryHeuristicSignal(
   recovery_attempt_id: string,
 ): Promise<void> {
   const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('payment_recovery_attempts')
+    .update({
+      heuristic_paid_signal_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', recovery_attempt_id)
+    .select('id');
+
+  if (error) {
+    throw new Error('markRecoveryHeuristicSignal failed: ' + error.message);
+  }
+  if (!data || data.length === 0) {
+    throw new Error(
+      `markRecoveryHeuristicSignal: no recovery attempt found for id ${recovery_attempt_id}`,
+    );
+  }
+}
+
+// ─── markRecoveryCompleted ────────────────────────────────────────────────────
+// AUTHORITATIVE completion. status='completed' is reachable ONLY from here, and
+// this is called ONLY by the signed payment-webhook processor
+// (src/app/api/webhooks/payments/[provider]/route.ts). Do not call it from any
+// heuristic / customer-text path — that is what markRecoveryHeuristicSignal is
+// for (DECISIONS.md 2026-07-22).
+export async function markRecoveryCompleted(params: {
+  recovery_attempt_id: string;
+  provider: string;
+  provider_payment_id: string | null;
+  provider_reference: string | null;
+  confirmed_amount: number | null;
+  confirmed_currency: string | null;
+}): Promise<void> {
+  const admin = createAdminClient();
+  const nowIso = new Date().toISOString();
   // Zero-rows guard (audit 1.5): recovery-fee stats depend on this transition,
   // so a silent no-op must surface as a thrown error rather than a false success.
   const { data, error } = await admin
     .from('payment_recovery_attempts')
     .update({
       status: 'completed',
-      completed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      completed_at: nowIso,
+      webhook_confirmed_at: nowIso,
+      confirmed_amount: params.confirmed_amount,
+      confirmed_currency: params.confirmed_currency,
+      provider: params.provider,
+      provider_payment_id: params.provider_payment_id,
+      provider_reference: params.provider_reference,
+      updated_at: nowIso,
     })
-    .eq('id', recovery_attempt_id)
+    .eq('id', params.recovery_attempt_id)
     .select('id');
 
   if (error) {
@@ -203,7 +284,7 @@ export async function markRecoveryCompleted(
   }
   if (!data || data.length === 0) {
     throw new Error(
-      `markRecoveryCompleted: no recovery attempt found for id ${recovery_attempt_id}`,
+      `markRecoveryCompleted: no recovery attempt found for id ${params.recovery_attempt_id}`,
     );
   }
 }
@@ -215,10 +296,18 @@ export async function getRecoveryStats(eventId: string): Promise<RecoveryStats> 
 
   const { data } = await admin
     .from('payment_recovery_attempts')
-    .select('status, amount_sar')
+    .select(
+      'status, amount_sar, confirmed_amount, webhook_confirmed_at, heuristic_paid_signal_at',
+    )
     .eq('event_id', eventId);
 
-  const rows = (data ?? []) as Array<{ status: string; amount_sar: number | string }>;
+  const rows = (data ?? []) as Array<{
+    status: string;
+    amount_sar: number | string;
+    confirmed_amount: number | string | null;
+    webhook_confirmed_at: string | null;
+    heuristic_paid_signal_at: string | null;
+  }>;
 
   const total_attempts = rows.length;
   // "sent" = any row that was successfully dispatched (sent, opened, or completed)
@@ -228,11 +317,23 @@ export async function getRecoveryStats(eventId: string): Promise<RecoveryStats> 
   const completed = rows.filter((r) => r.status === 'completed').length;
   const expired = rows.filter((r) => r.status === 'expired').length;
   const total_amount_sar = rows.reduce((sum, r) => sum + toNumber(r.amount_sar), 0);
-  const recovered_amount_sar = rows
-    .filter((r) => r.status === 'completed')
-    .reduce((sum, r) => sum + toNumber(r.amount_sar), 0);
-  const recovery_rate_pct = sent === 0 ? 0 : (completed / sent) * 100;
+
+  // Recovered revenue and the billable 22% fee come EXCLUSIVELY from rows a
+  // signed PSP webhook has confirmed (webhook_confirmed_at not null), summing
+  // the confirmed_amount the PSP actually captured — never amount_sar and
+  // never customer text claims (audit / DECISIONS.md 2026-07-22).
+  const confirmedRows = rows.filter((r) => r.webhook_confirmed_at != null);
+  const recovered_amount_sar = confirmedRows.reduce(
+    (sum, r) => sum + toNumber(r.confirmed_amount),
+    0,
+  );
+  const recovery_rate_pct = sent === 0 ? 0 : (confirmedRows.length / sent) * 100;
   const recovery_fee_sar = recovered_amount_sar * 0.22;
+
+  // Soft-signal pipeline: customer claimed payment but no signed webhook yet.
+  const claimed_awaiting_confirmation = rows.filter(
+    (r) => r.heuristic_paid_signal_at != null && r.webhook_confirmed_at == null,
+  ).length;
 
   return {
     total_attempts,
@@ -243,6 +344,7 @@ export async function getRecoveryStats(eventId: string): Promise<RecoveryStats> 
     recovered_amount_sar,
     recovery_rate_pct,
     recovery_fee_sar,
+    claimed_awaiting_confirmation,
   };
 }
 
